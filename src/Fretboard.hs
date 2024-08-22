@@ -16,6 +16,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Fretboard
   ( -- * API
@@ -71,6 +72,9 @@ import Modulation
     IsScale,
     LocalInterpretation (toLocalInterpretation),
     VoiceScale (drawScale),
+    cDorian,
+    cIonian,
+    cMixolydian,
     transpose,
     transposeFunctor,
     transposition,
@@ -484,46 +488,42 @@ cMajor7Frettings' = Set.toList cMajor7Frettings
 drawFretting :: Fretting -> String
 drawFretting (Fretting fretboard frets) =
   let maxFret = maximum $ 0 : [f | (_, Just (_, f)) <- Set.toList frets]
-      fretNumbers = [1 .. maxFret]
+      fretNumbers = [0 .. maxFret]
       fretLines =
         map
           (drawFretLine frets maxFret)
-          [numStrings fretboard - 1, numStrings fretboard - 2 .. 0]
+          [0 .. numStrings fretboard - 1]
       fretNumberLine =
         "    "
           ++ concatMap
             ( \f ->
-                show f
-                  ++ replicate
-                    (4 - length (show f))
-                    ' '
+                (if f < 10 then " " else "")
+                  ++ show f
+                  ++ " "
             )
             fretNumbers
       tuningLine =
         zipWith
           ( \s c ->
-              if Set.member (s, Nothing) frets then head (show c) : "|" else "X|"
+              if Set.member (s, Nothing) frets then show c else " "
           )
-          [numStrings fretboard - 1, numStrings fretboard - 2 .. 0]
-          (reverse $ tuning fretboard)
+          [0 .. numStrings fretboard - 1]
+          (tuning fretboard)
    in unlines $
-        zipWith (<>) tuningLine fretLines
+        (tuningLine ++ fretLines)
           ++ [fretNumberLine]
 
 drawFretLine :: Set (Int, Maybe (Finger, Int)) -> Int -> Int -> String
 drawFretLine frets maxFret stringIndex =
-  let fretPositions = [1 .. maxFret]
-      fretSymbols = map (drawFretSymbol frets stringIndex) fretPositions
-   in '|' : concat fretSymbols
+  "|" ++ concatMap (drawFretSymbol frets stringIndex) [0 .. maxFret]
 
 drawFretSymbol :: Set (Int, Maybe (Finger, Int)) -> Int -> Int -> String
-drawFretSymbol frets stringIndex fretIndex
-  | Set.member (stringIndex, Just (Thumb, fretIndex)) frets = "-T-|"
-  | Set.member (stringIndex, Just (Index, fretIndex)) frets = "-I-|"
-  | Set.member (stringIndex, Just (Middle, fretIndex)) frets = "-M-|"
-  | Set.member (stringIndex, Just (Ring, fretIndex)) frets = "-R-|"
-  | Set.member (stringIndex, Just (Pinky, fretIndex)) frets = "-P-|"
-  | otherwise = "---|"
+drawFretSymbol frets stringIndex fretIndex =
+  case Set.lookupLE (stringIndex, Just (maxBound, fretIndex)) frets of
+    Just (s, Just (finger, f))
+      | s == stringIndex && f == fretIndex ->
+          "-" ++ show finger ++ "-"
+    _ -> "---"
 
 -- | Optimizes frettings for a given list of sets of chromatics (chords) in a progression
 optimizeFrettings :: Int -> Fretboard -> [Set Chromatic] -> [Fretting]
@@ -599,21 +599,27 @@ drawFrettingWithChord fretting =
     <> "\n"
     <> drawFretting fretting
 
-fretScale :: (IsScale f) => Fretboard -> f Chromatic -> Int -> Set ((Int, Int), (Rep f, Chromatic))
+fretScale ::
+  (IsScale f, Enum (Rep f), Ord (Rep f)) =>
+  Fretboard ->
+  f Chromatic ->
+  Int ->
+  Set ((Int, Int), (Rep f, Chromatic))
 fretScale fretboard scale maxFret =
   Set.fromList
     [ ((string, fret), (degree, note))
       | string <- [0 .. numStrings fretboard - 1],
-        fret <- [0 .. maxFret],
         let openNote = tuning fretboard !! string,
-        let note = transposeChromatic openNote (transposition (fromIntegral fret)),
+        fret <- [0 .. maxFret],
+        let note =
+              transposeChromatic openNote (transposition (fromIntegral fret)),
         degree <- [minBound .. maxBound],
-        index scale degree == toLocalInterpretation note
+        index scale degree == note
     ]
 
-instance (IsScale f) => VoiceScale f Fretboard (Mod 12) where
+instance (IsScale f, Ord (Rep f), Enum (Rep f), Show (Rep f)) => VoiceScale f Fretboard (Mod 12) where
   drawScale scale fretboard =
-    let maxFret = 18
+    let maxFret = 24
         scaleFretting = fretScale @f fretboard (fmap toLocalInterpretation scale) maxFret
         maxFretNumber = maximum $ 0 : [fret | ((_, fret), _) <- Set.toList scaleFretting]
         fretNumbers = [0 .. maxFretNumber]
@@ -634,8 +640,8 @@ instance (IsScale f) => VoiceScale f Fretboard (Mod 12) where
         tuningLine =
           zipWith
             ( \s c ->
-                if Set.member ((s, 0), (0, c)) scaleFretting
-                  then head (show c) : "|"
+                if Set.member ((s, 0), (minBound, c)) scaleFretting
+                  then show (fst $ head $ filter ((== c) . snd . snd) $ Set.toList scaleFretting) ++ "|"
                   else "X|"
             )
             [numStrings fretboard - 1, numStrings fretboard - 2 .. 0]
@@ -644,16 +650,49 @@ instance (IsScale f) => VoiceScale f Fretboard (Mod 12) where
           zipWith (<>) tuningLine fretLines
             ++ [fretNumberLine]
     where
-      drawFretLine :: (IsScale f) => Set ((Int, Int), (Rep f, Chromatic)) -> Int -> Int -> String
+      drawFretLine :: (IsScale f, Show (Rep f)) => Set ((Int, Int), (Rep f, Chromatic)) -> Int -> Int -> String
       drawFretLine scaleFretting maxFret stringIndex =
         let fretPositions = [0 .. maxFret]
             fretSymbols = map (drawFretSymbol scaleFretting stringIndex) fretPositions
          in '|' : concat fretSymbols
 
-      drawFretSymbol :: (IsScale f) => Set ((Int, Int), (Rep f, Chromatic)) -> Int -> Int -> String
-      drawFretSymbol scaleFretting stringIndex fretIndex
-        | Just (degree, note) <- Set.lookupLE ((stringIndex, fretIndex), (maxBound, maxBound)) scaleFretting =
-            let degreeStr = show degree
-                noteStr = (show $ snd note)
-             in "-" ++ degreeStr ++ noteStr ++ "|"
-        | otherwise = "----|"
+      drawFretSymbol :: (IsScale f, Show (Rep f)) => Set ((Int, Int), (Rep f, Chromatic)) -> Int -> Int -> String
+      drawFretSymbol scaleFretting stringIndex fretIndex =
+        case Set.lookupLE ((stringIndex, fretIndex), (maxBound, maxBound)) scaleFretting of
+          Just ((s, f), (d, _))
+            | s == stringIndex && f == fretIndex ->
+                "-" ++ show (repTo1Index d) ++ "-|"
+          _ -> "----|"
+
+repTo1Index :: (Enum a, Bounded a) => a -> Int
+repTo1Index x = fromEnum x + 1
+
+-- Test fretboards for visualization
+testStandardFretboard :: Fretboard
+testStandardFretboard = standardTuning
+
+testDropDFretboard :: Fretboard
+testDropDFretboard = dropDTuning
+
+testOpenDFretboard :: Fretboard
+testOpenDFretboard = openDTuning
+
+-- Test drawing functions
+drawTestStandardFretboard :: String
+drawTestStandardFretboard = drawScale cIonian testStandardFretboard
+
+drawTestDropDFretboard :: String
+drawTestDropDFretboard = drawScale cMixolydian testDropDFretboard
+
+drawTestOpenDFretboard :: String
+drawTestOpenDFretboard = drawScale cDorian testOpenDFretboard
+
+-- Function to display all test fretboards
+displayAllTestFretboards :: IO ()
+displayAllTestFretboards = do
+  putStrLn "Standard Tuning (C Ionian):"
+  putStrLn drawTestStandardFretboard
+  putStrLn "Drop D Tuning (C Mixolydian):"
+  putStrLn drawTestDropDFretboard
+  putStrLn "Open D Tuning (C Dorian):"
+  putStrLn drawTestOpenDFretboard

@@ -20,7 +20,7 @@
 
   languages.haskell = {
     enable = true;
-    package = pkgs.haskell.compiler.ghc948;
+    package = pkgs.haskell.compiler.ghc982;
   };
 
   pre-commit.hooks = {

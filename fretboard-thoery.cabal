@@ -34,7 +34,7 @@ library
   -- other-extensions:
   build-depends:
     , adjunctions
-    , base                  ^>=4.17
+    , base                  ^>=4.19
     , bifunctors
     , comonad
     , comonad-transformers
@@ -69,7 +69,7 @@ executable fretboard-thoery-bench
   main-is:          Main.hs
   hs-source-dirs:   bench
   build-depends:
-    , base              ^>=4.17
+    , base              ^>=4.19
     , criterion
     , fretboard-thoery
 
@@ -80,7 +80,7 @@ executable fret-cli
   main-is:          Main.hs
   hs-source-dirs:   fret-cli
   build-depends:
-    , base                  ^>=4.17
+    , base                  ^>=4.19
     , fretboard-thoery
     , optparse-applicative
 

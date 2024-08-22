@@ -14,7 +14,7 @@ go =
         "optimized fretting"
         [ bench "optimizedFrettings: cProgression" $ nfIO $ do
             let fretboard = knownTuning Standard
-            return $ optimizeFrettings 3 fretboard cProgression
+            return $ optimizeFrettings 25 fretboard cProgression
         ],
       bgroup
         "chromatics from fretting"

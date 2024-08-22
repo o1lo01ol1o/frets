@@ -100,8 +100,8 @@ class (Bounded (Rep f), Representable f) => IsScale f where
   transposeScaleSemiTones :: (Num a) => a -> f a -> f a
   transposeScaleSemiTones i = transposeFunctor (transposition i)
 
-class (IsScale f, LocalInterpretation a Chromatic) => VoiceScale f i a where
-  drawScale :: f a -> i -> String
+class (IsScale f, LocalInterpretation a Chromatic) => VoiceScale f i a s where
+  drawScale :: f a -> i -> s
 
 -- | An seven note scale
 data HeptatonicScale a = HeptatonicScale a a a a a a a

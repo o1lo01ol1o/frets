@@ -1,11 +1,14 @@
 module Main where
 
+import qualified Data.Set as Set
 import qualified Fretboard
 import Modulation
 import Options.Applicative
 
 main :: IO ()
-main = undefined
+main = execParser opts >>= drawFretboard
+  where
+    opts = info (optionsParser <**> helper) fullDesc
 
 -- | The CLI options.  We take a Fretboard.KnownTuning, KnownHeptatonicScale,
 -- an integer mod 12 and a list of Accidental Degrees as options.
@@ -59,8 +62,6 @@ optionsParser =
 -- and draw it to the console
 drawFretboard :: Options -> IO ()
 drawFretboard (Options t s m a) = do
-  let fretboard = Fretboard.fretboard t
-  let scale = modulate m s
-  let frets = Fretboard.fretNotes fretboard scale
-  let frets' = map (map (show . Fretboard.noteName)) frets
-  mapM_ putStrLn frets'
+  let fretboard = Fretboard.knownTuning t
+  let scale = transposeScaleSemiTones (fromIntegral m) (knownHeptatonicScale s)
+  mconcat $ map putStrLn $ lines $ Fretboard.drawScale scale fretboard

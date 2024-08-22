@@ -64,7 +64,8 @@ test-suite fretboard-thoery-test
   main-is:          MyLibTest.hs
   build-depends:    base ^>=4.17
 
-executable fretboard-thoery-bench
+benchmark fretboard-thoery-bench
+  type:             exitcode-stdio-1.0
   default-language: Haskell2010
   main-is:          Main.hs
   hs-source-dirs:   bench
@@ -81,6 +82,7 @@ executable fret-cli
   hs-source-dirs:   fret-cli
   build-depends:
     , base                  ^>=4.19
+    , containers
     , fretboard-thoery
     , optparse-applicative
 

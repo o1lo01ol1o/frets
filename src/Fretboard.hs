@@ -31,6 +31,8 @@ module Fretboard
     optimizeFrettings,
     chromaticsFromFretting,
     drawFrettingWithChord,
+    VoiceScale,
+    drawScale,
 
     -- * Tests
     cMajor7Chord,
@@ -528,8 +530,8 @@ drawFretSymbol frets stringIndex fretIndex =
 -- | Optimizes frettings for a given list of sets of chromatics (chords) in a progression
 optimizeFrettings :: Int -> Fretboard -> [Set Chromatic] -> [Fretting]
 optimizeFrettings k tuning chromaticSets =
-  let frettingSets = map (findFrettings k tuning) chromaticSets
-      allCombinations = sequence (map Set.toList frettingSets)
+  let frettingSets = parMap rdeepseq (findFrettings k tuning) chromaticSets
+      allCombinations = mapM Set.toList frettingSets
    in if null allCombinations
         then []
         else
@@ -599,6 +601,12 @@ drawFrettingWithChord fretting =
     <> "\n"
     <> drawFretting fretting
 
+-- Test drawFrettingWithChord function on cProgression
+testDrawFrettingWithChord :: IO ()
+testDrawFrettingWithChord = do
+  let frettings = optimizeFrettings 25 standardTuning cProgression
+  mapM_ (putStrLn . drawFrettingWithChord) frettings
+
 fretScale ::
   (IsScale f, Enum (Rep f), Ord (Rep f)) =>
   Fretboard ->
@@ -617,12 +625,12 @@ fretScale fretboard scale maxFret =
         index scale degree == note
     ]
 
-instance (IsScale f, Ord (Rep f), Enum (Rep f), Show (Rep f)) => VoiceScale f Fretboard (Mod 12) where
+instance (IsScale f, Ord (Rep f), Enum (Rep f), Show (Rep f)) => VoiceScale f Fretboard (Mod 12) String where
   drawScale scale fretboard =
-    let maxFret = 24
+    let maxFret = 14
         scaleFretting = fretScale @f fretboard (fmap toLocalInterpretation scale) maxFret
         maxFretNumber = maximum $ 0 : [fret | ((_, fret), _) <- Set.toList scaleFretting]
-        fretNumbers = [0 .. maxFretNumber]
+        fretNumbers = [1 .. maxFretNumber]
         fretLines =
           map
             (drawFretLine scaleFretting maxFretNumber)
@@ -640,9 +648,9 @@ instance (IsScale f, Ord (Rep f), Enum (Rep f), Show (Rep f)) => VoiceScale f Fr
         tuningLine =
           zipWith
             ( \s c ->
-                if Set.member ((s, 0), (minBound, c)) scaleFretting
-                  then show (fst $ head $ filter ((== c) . snd . snd) $ Set.toList scaleFretting) ++ "|"
-                  else "X|"
+                case Set.lookupLE ((s, 0), (maxBound, c)) scaleFretting of
+                  Just ((_, 0), (d, _)) -> show (repTo1Index d) ++ "|"
+                  _ -> "X|"
             )
             [numStrings fretboard - 1, numStrings fretboard - 2 .. 0]
             (reverse $ tuning fretboard)
@@ -652,7 +660,7 @@ instance (IsScale f, Ord (Rep f), Enum (Rep f), Show (Rep f)) => VoiceScale f Fr
     where
       drawFretLine :: (IsScale f, Show (Rep f)) => Set ((Int, Int), (Rep f, Chromatic)) -> Int -> Int -> String
       drawFretLine scaleFretting maxFret stringIndex =
-        let fretPositions = [0 .. maxFret]
+        let fretPositions = [1 .. maxFret]
             fretSymbols = map (drawFretSymbol scaleFretting stringIndex) fretPositions
          in '|' : concat fretSymbols
 
@@ -662,7 +670,7 @@ instance (IsScale f, Ord (Rep f), Enum (Rep f), Show (Rep f)) => VoiceScale f Fr
           Just ((s, f), (d, _))
             | s == stringIndex && f == fretIndex ->
                 "-" ++ show (repTo1Index d) ++ "-|"
-          _ -> "----|"
+          _ -> "---|"
 
 repTo1Index :: (Enum a, Bounded a) => a -> Int
 repTo1Index x = fromEnum x + 1
@@ -684,6 +692,9 @@ drawTestStandardFretboard = drawScale cIonian testStandardFretboard
 drawTestDropDFretboard :: String
 drawTestDropDFretboard = drawScale cMixolydian testDropDFretboard
 
+drawTestDadgadFretboard :: String
+drawTestDadgadFretboard = drawScale cMixolydian dadgadTuning
+
 drawTestOpenDFretboard :: String
 drawTestOpenDFretboard = drawScale cDorian testOpenDFretboard
 
@@ -691,8 +702,20 @@ drawTestOpenDFretboard = drawScale cDorian testOpenDFretboard
 displayAllTestFretboards :: IO ()
 displayAllTestFretboards = do
   putStrLn "Standard Tuning (C Ionian):"
-  putStrLn drawTestStandardFretboard
+  mapM_ putStrLn $ lines $ drawTestStandardFretboard
   putStrLn "Drop D Tuning (C Mixolydian):"
-  putStrLn drawTestDropDFretboard
+  mapM_ putStrLn $ lines $ drawTestDropDFretboard
   putStrLn "Open D Tuning (C Dorian):"
-  putStrLn drawTestOpenDFretboard
+  mapM_ putStrLn $ lines $ drawTestOpenDFretboard
+  putStrLn "DADGAD Tuning (C Mixolydian):"
+  mapM_ putStrLn $ lines $ drawTestDadgadFretboard
+
+-- Function to display some chord frettings
+displayChordFrettings :: IO ()
+displayChordFrettings = do
+  putStrLn "C Major Chord Frettings:"
+  mapM_ (putStrLn . drawFrettingWithChord) $ take 3 $ Set.toList $ findFrettings 10 standardTuning cMajorChord
+  putStrLn "\nC Major 7 Chord Frettings:"
+  mapM_ (putStrLn . drawFrettingWithChord) $ take 3 $ Set.toList $ findFrettings 10 standardTuning cMajor7Chord
+  putStrLn "\nC Major 7 Add 9 Chord Frettings:"
+  mapM_ (putStrLn . drawFrettingWithChord) $ take 3 $ Set.toList $ findFrettings 10 standardTuning cMajor7Add9Chord

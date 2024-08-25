@@ -11,9 +11,9 @@ module Paths_fretboard_thoery
     getBinDir,
     getLibDir,
     getDynLibDir,
-    getDataDir,
     getLibexecDir,
     getDataFileName,
+    getDataDir,
     getSysconfDir,
   )
 where
@@ -45,30 +45,40 @@ getDataFileName name = do
   dir <- getDataDir
   return (dir `joinFileName` name)
 
-getBinDir, getLibDir, getDynLibDir, getDataDir, getLibexecDir, getSysconfDir :: IO FilePath
-bindir, libdir, dynlibdir, datadir, libexecdir, sysconfdir :: FilePath
+bindir :: FilePath
 bindir = "/Users/timpierson/.cabal/bin"
 
-libdir = "/Users/timpierson/.cabal/lib/aarch64-osx-ghc-9.8.2/fretboard-thoery-0.1.0.0-inplace-fretboard-thoery-bench"
-
-dynlibdir = "/Users/timpierson/.cabal/lib/aarch64-osx-ghc-9.8.2"
-
-datadir = "/Users/timpierson/.cabal/share/aarch64-osx-ghc-9.8.2/fretboard-thoery-0.1.0.0"
-
-libexecdir = "/Users/timpierson/.cabal/libexec/aarch64-osx-ghc-9.8.2/fretboard-thoery-0.1.0.0"
-
-sysconfdir = "/Users/timpierson/.cabal/etc"
-
+getBinDir :: IO FilePath
 getBinDir = catchIO (getEnv "fretboard_thoery_bindir") (\_ -> return bindir)
 
+libdir :: FilePath
+libdir = "/Users/timpierson/.cabal/lib/aarch64-osx-ghc-9.8.2/fretboard-thoery-0.1.0.0-inplace-fretboard-thoery-bench"
+
+getLibDir :: IO FilePath
 getLibDir = catchIO (getEnv "fretboard_thoery_libdir") (\_ -> return libdir)
 
+dynlibdir :: FilePath
+dynlibdir = "/Users/timpierson/.cabal/lib/aarch64-osx-ghc-9.8.2"
+
+getDynLibDir :: IO FilePath
 getDynLibDir = catchIO (getEnv "fretboard_thoery_dynlibdir") (\_ -> return dynlibdir)
 
+datadir :: FilePath
+datadir = "/Users/timpierson/.cabal/share/aarch64-osx-ghc-9.8.2/fretboard-thoery-0.1.0.0"
+
+getDataDir :: IO FilePath
 getDataDir = catchIO (getEnv "fretboard_thoery_datadir") (\_ -> return datadir)
 
+libexecdir :: FilePath
+libexecdir = "/Users/timpierson/.cabal/libexec/aarch64-osx-ghc-9.8.2/fretboard-thoery-0.1.0.0"
+
+getLibexecDir :: IO FilePath
 getLibexecDir = catchIO (getEnv "fretboard_thoery_libexecdir") (\_ -> return libexecdir)
 
+sysconfdir :: FilePath
+sysconfdir = "/Users/timpierson/.cabal/etc"
+
+getSysconfDir :: IO FilePath
 getSysconfDir = catchIO (getEnv "fretboard_thoery_sysconfdir") (\_ -> return sysconfdir)
 
 joinFileName :: String -> String -> FilePath

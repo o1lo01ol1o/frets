@@ -5,7 +5,8 @@
   env.GREET = "devenv";
 
   # https://devenv.sh/packages/
-  packages = [ pkgs.git pkgs.haskellPackages.cabal-fmt pkgs.difftastic ];
+  packages = [ pkgs.git pkgs.cabal-install pkgs.haskellPackages.cabal-fmt pkgs.llvmPackages_15.clang pkgs.llvm_15 ];
+  stdenv =  pkgs.llvmPackages_15.stdenv;
 
   # https://devenv.sh/scripts/
   scripts.hello.exec = "echo hello from $GREET";
@@ -17,6 +18,7 @@
 
   # https://devenv.sh/languages/
   languages.nix.enable = true;
+  difftastic.enable = true;
 
   languages.haskell = {
     enable = true;

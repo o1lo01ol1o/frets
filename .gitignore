@@ -2,7 +2,7 @@
 # Devenv
 .devenv*
 devenv.local.nix
-
+dist-newstyle
 # direnv
 .direnv
 

@@ -90,6 +90,16 @@
   (major1) == 5 && (major2) <  2 || \
   (major1) == 5 && (major2) == 2 && (minor) <= 0)
 #endif /* MIN_VERSION_free */
+/* package hedgehog-1.5 */
+#ifndef VERSION_hedgehog
+#define VERSION_hedgehog "1.5"
+#endif /* VERSION_hedgehog */
+#ifndef MIN_VERSION_hedgehog
+#define MIN_VERSION_hedgehog(major1,major2,minor) (\
+  (major1) <  1 || \
+  (major1) == 1 && (major2) <  5 || \
+  (major1) == 1 && (major2) == 5 && (minor) <= 0)
+#endif /* MIN_VERSION_hedgehog */
 /* package lattices-2.2.1 */
 #ifndef VERSION_lattices
 #define VERSION_lattices "2.2.1"
@@ -180,6 +190,36 @@
   (major1) == 0 && (major2) <  20 || \
   (major1) == 0 && (major2) == 20 && (minor) <= 0)
 #endif /* MIN_VERSION_semigroups */
+/* package tasty-1.5 */
+#ifndef VERSION_tasty
+#define VERSION_tasty "1.5"
+#endif /* VERSION_tasty */
+#ifndef MIN_VERSION_tasty
+#define MIN_VERSION_tasty(major1,major2,minor) (\
+  (major1) <  1 || \
+  (major1) == 1 && (major2) <  5 || \
+  (major1) == 1 && (major2) == 5 && (minor) <= 0)
+#endif /* MIN_VERSION_tasty */
+/* package tasty-hedgehog-1.4.0.2 */
+#ifndef VERSION_tasty_hedgehog
+#define VERSION_tasty_hedgehog "1.4.0.2"
+#endif /* VERSION_tasty_hedgehog */
+#ifndef MIN_VERSION_tasty_hedgehog
+#define MIN_VERSION_tasty_hedgehog(major1,major2,minor) (\
+  (major1) <  1 || \
+  (major1) == 1 && (major2) <  4 || \
+  (major1) == 1 && (major2) == 4 && (minor) <= 0)
+#endif /* MIN_VERSION_tasty_hedgehog */
+/* package tasty-quickcheck-0.11 */
+#ifndef VERSION_tasty_quickcheck
+#define VERSION_tasty_quickcheck "0.11"
+#endif /* VERSION_tasty_quickcheck */
+#ifndef MIN_VERSION_tasty_quickcheck
+#define MIN_VERSION_tasty_quickcheck(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  11 || \
+  (major1) == 0 && (major2) == 11 && (minor) <= 0)
+#endif /* MIN_VERSION_tasty_quickcheck */
 /* package transformers-0.6.1.0 */
 #ifndef VERSION_transformers
 #define VERSION_transformers "0.6.1.0"
@@ -211,25 +251,15 @@
   (major1) == 0 && (major2) == 2 && (minor) <= 2)
 #endif /* MIN_VERSION_vector_th_unbox */
 
-/* tool doctest-0.17 */
-#ifndef TOOL_VERSION_doctest
-#define TOOL_VERSION_doctest "0.17"
-#endif /* TOOL_VERSION_doctest */
-#ifndef MIN_TOOL_VERSION_doctest
-#define MIN_TOOL_VERSION_doctest(major1,major2,minor) (\
-  (major1) <  0 || \
-  (major1) == 0 && (major2) <  17 || \
-  (major1) == 0 && (major2) == 17 && (minor) <= 0)
-#endif /* MIN_TOOL_VERSION_doctest */
-/* tool gcc-15.0.0 */
+/* tool gcc-16.0.6 */
 #ifndef TOOL_VERSION_gcc
-#define TOOL_VERSION_gcc "15.0.0"
+#define TOOL_VERSION_gcc "16.0.6"
 #endif /* TOOL_VERSION_gcc */
 #ifndef MIN_TOOL_VERSION_gcc
 #define MIN_TOOL_VERSION_gcc(major1,major2,minor) (\
-  (major1) <  15 || \
-  (major1) == 15 && (major2) <  0 || \
-  (major1) == 15 && (major2) == 0 && (minor) <= 0)
+  (major1) <  16 || \
+  (major1) == 16 && (major2) <  0 || \
+  (major1) == 16 && (major2) == 0 && (minor) <= 6)
 #endif /* MIN_TOOL_VERSION_gcc */
 /* tool ghc-9.8.2 */
 #ifndef TOOL_VERSION_ghc

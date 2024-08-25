@@ -1,1 +1,3 @@
-packages: *.cabal
+packages:
+    fretboard-thoery/*.cabal
+    fretboard-diagram/*.cabal

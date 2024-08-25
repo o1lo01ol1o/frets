@@ -30,6 +30,16 @@
   (major1) == 1 && (major2) <  6 || \
   (major1) == 1 && (major2) == 6 && (minor) <= 3)
 #endif /* MIN_VERSION_criterion */
+/* package deepseq-1.5.0.0 */
+#ifndef VERSION_deepseq
+#define VERSION_deepseq "1.5.0.0"
+#endif /* VERSION_deepseq */
+#ifndef MIN_VERSION_deepseq
+#define MIN_VERSION_deepseq(major1,major2,minor) (\
+  (major1) <  1 || \
+  (major1) == 1 && (major2) <  5 || \
+  (major1) == 1 && (major2) == 5 && (minor) <= 0)
+#endif /* MIN_VERSION_deepseq */
 /* package fretboard-thoery-0.1.0.0 */
 #ifndef VERSION_fretboard_thoery
 #define VERSION_fretboard_thoery "0.1.0.0"
@@ -41,25 +51,15 @@
   (major1) == 0 && (major2) == 1 && (minor) <= 0)
 #endif /* MIN_VERSION_fretboard_thoery */
 
-/* tool doctest-0.17 */
-#ifndef TOOL_VERSION_doctest
-#define TOOL_VERSION_doctest "0.17"
-#endif /* TOOL_VERSION_doctest */
-#ifndef MIN_TOOL_VERSION_doctest
-#define MIN_TOOL_VERSION_doctest(major1,major2,minor) (\
-  (major1) <  0 || \
-  (major1) == 0 && (major2) <  17 || \
-  (major1) == 0 && (major2) == 17 && (minor) <= 0)
-#endif /* MIN_TOOL_VERSION_doctest */
-/* tool gcc-15.0.0 */
+/* tool gcc-16.0.6 */
 #ifndef TOOL_VERSION_gcc
-#define TOOL_VERSION_gcc "15.0.0"
+#define TOOL_VERSION_gcc "16.0.6"
 #endif /* TOOL_VERSION_gcc */
 #ifndef MIN_TOOL_VERSION_gcc
 #define MIN_TOOL_VERSION_gcc(major1,major2,minor) (\
-  (major1) <  15 || \
-  (major1) == 15 && (major2) <  0 || \
-  (major1) == 15 && (major2) == 0 && (minor) <= 0)
+  (major1) <  16 || \
+  (major1) == 16 && (major2) <  0 || \
+  (major1) == 16 && (major2) == 0 && (minor) <= 6)
 #endif /* MIN_TOOL_VERSION_gcc */
 /* tool ghc-9.8.2 */
 #ifndef TOOL_VERSION_ghc

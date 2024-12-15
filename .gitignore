@@ -2,8 +2,19 @@
 # Devenv
 .devenv*
 devenv.local.nix
-**/dist-newstyle
-**/dist
+**/dist/
+**/dist-newstyle/
+**/.stack-work/
+**/*.hi
+**/*.o
+**/*.chi
+**/*.chs.h
+**/.cabal-sandbox/
+**/cabal.sandbox.config
+**/.ghc.environment.*
+**/*.dyn_hi
+**/*.dyn_o
+**/cabal.project.local
 **/.metadata
 # direnv
 .direnv

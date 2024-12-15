@@ -2,7 +2,9 @@
 # Devenv
 .devenv*
 devenv.local.nix
-dist-newstyle
+**/dist-newstyle
+**/dist
+**/.metadata
 # direnv
 .direnv
 
@@ -12,3 +14,5 @@ dist-newstyle
 .cabal-fmt-*
 
 .vscode
+
+rubato-src-20070720/bin

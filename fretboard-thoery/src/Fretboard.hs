@@ -30,6 +30,7 @@ module Fretboard
     drawFrettingWithPossibleChords,
     VoiceScale,
     drawScale,
+    fretScale,
 
     -- * Tests
     cMajor7Chord,

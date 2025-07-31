@@ -5,7 +5,7 @@
   env.GREET = "devenv";
 
   # https://devenv.sh/packages/
-  packages = [ pkgs.git pkgs.cabal-install pkgs.haskellPackages.cabal-fmt pkgs.llvmPackages_15.clang pkgs.llvm_15 ];
+  packages = [ pkgs.git pkgs.blas pkgs.lapack pkgs.cabal-install pkgs.haskellPackages.cabal-fmt pkgs.llvmPackages_15.clang pkgs.llvm_15 ];
   stdenv =  pkgs.llvmPackages_15.stdenv;
 
   # https://devenv.sh/scripts/
@@ -25,6 +25,13 @@
     package = pkgs.haskell.compiler.ghc982;
   };
 
+  languages.python = {
+    enable = true;
+    version = "3.10.15";
+    uv.enable = true;
+
+  };
+
   pre-commit.hooks = {
     # lint shell scripts
     shellcheck.enable = true;
@@ -35,7 +42,7 @@
     # nil.enable = true;
     # statix.enable = true;
     # format haskell
-    ormolu.enable = true;
+    ormolu.enable = false;
     cabal-fmt.enable = true;
     # lint haskell
     # hlint.enable = true;

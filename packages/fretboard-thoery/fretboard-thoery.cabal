@@ -1,0 +1,95 @@
+cabal-version:      3.0
+name:               fretboard-thoery
+version:            0.1.0.0
+synopsis:           Neo-Riemannian harmonic analysis and fretboard theory
+description:
+  A library for Neo-Riemannian harmonic analysis and guitar fretboard theory.
+  Provides tools for analyzing chord progressions using Riemann matrices,
+  finding optimal harmonic paths, and working with guitar fretboards.
+
+homepage:           https://github.com/o1lo01ol1o/fretboard-thoery
+license:            BSD-3-Clause
+author:             o1lo01ol1o
+maintainer:         tim.pierson@gmail.com
+category:           Music
+extra-source-files: CHANGELOG.md
+
+library
+  exposed-modules:
+    Chord
+    Data.Functor.Rix.Rep
+    Data.HarmonicAnalysis
+    Data.HarmonicAnalysis.ChainOfThirds
+    Data.HarmonicAnalysis.Display
+    Data.HarmonicAnalysis.PathFinding
+    Data.HarmonicAnalysis.RealTensionData
+    Data.HarmonicAnalysis.RiemannMatrix
+    Data.HarmonicAnalysis.Tension
+    Data.HarmonicAnalysis.Types
+    Finger
+    Finger.TH
+    Fretboard
+    Modulation
+
+  other-modules:    Data.HarmonicAnalysis.WindowedPathFinding
+  build-depends:
+    , adjunctions
+    , array
+    , base                  ^>=4.19
+    , bifunctors
+    , comfort-array
+    , comfort-array-shape
+    , comonad
+    , comonad-transformers
+    , containers
+    , deepseq
+    , distributive
+    , fixed-length
+    , free
+    , hedgehog
+    , hmatrix
+    , lattices
+    , lens
+    , linear
+    , mod
+    , mtl
+    , non-empty
+    , parallel
+    , pqueue
+    , profunctors
+    , semigroups
+    , tasty
+    , tasty-hedgehog
+    , tasty-quickcheck
+    , transformers
+    , vector
+    , vector-th-unbox
+
+  hs-source-dirs:   src
+  default-language: Haskell2010
+
+test-suite fretboard-thoery-test
+  default-language: Haskell2010
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Main.hs
+  other-modules:
+    Debug.PathFindingDebug
+    Debug.ProbabilityDebug
+    Debug.ViterbiDebug
+    Spec.Fretboard
+    Spec.HarmonicAnalysis
+
+  build-depends:
+    , base              ^>=4.19
+    , containers
+    , fretboard-thoery
+    , hedgehog
+    , mod
+    , tasty
+    , tasty-hedgehog
+    , tasty-hunit
+    , tasty-quickcheck
+    , vector
+
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-N

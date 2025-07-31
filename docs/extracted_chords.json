@@ -1,0 +1,76 @@
+[
+  {
+    "root": "B",
+    "quality": "Min",
+    "seventh": null,
+    "pitches": [
+      6,
+      11,
+      2
+    ],
+    "chord_symbol": "B-minor triad",
+    "notes": [
+      "Fs",
+      "B",
+      "D"
+    ],
+    "offset": 20.5,
+    "duration": 0.5
+  },
+  {
+    "root": "A",
+    "quality": "Maj",
+    "seventh": null,
+    "pitches": [
+      4,
+      9,
+      1
+    ],
+    "chord_symbol": "A-major triad",
+    "notes": [
+      "E",
+      "A",
+      "Cs"
+    ],
+    "offset": 21.0,
+    "duration": 1.0
+  },
+  {
+    "root": "E",
+    "quality": null,
+    "seventh": null,
+    "pitches": [
+      2,
+      4,
+      8,
+      11
+    ],
+    "chord_symbol": "E-dominant seventh chord",
+    "notes": [
+      "D",
+      "E",
+      "Gs",
+      "B"
+    ],
+    "offset": 22.0,
+    "duration": 0.5
+  },
+  {
+    "root": "A",
+    "quality": "Maj",
+    "seventh": null,
+    "pitches": [
+      1,
+      4,
+      9
+    ],
+    "chord_symbol": "A-major triad",
+    "notes": [
+      "Cs",
+      "E",
+      "A"
+    ],
+    "offset": 22.5,
+    "duration": 1.0
+  }
+]

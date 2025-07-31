@@ -7,6 +7,7 @@ import qualified Debug.ProbabilityDebug as ProbabilityDebug
 import qualified Debug.ViterbiDebug as ViterbiDebug
 import qualified Spec.Fretboard as Fretboard
 import qualified Spec.HarmonicAnalysis as HarmonicAnalysis
+import qualified Spec.HarmonicAnalysisHMatrix as HarmonicAnalysisHMatrix
 import Test.Tasty
 import Test.Tasty.HUnit
 import qualified Test.Tasty.Hedgehog as H
@@ -23,6 +24,7 @@ tests =
       propertyTests,
       Fretboard.tests,
       HarmonicAnalysis.tests,
+      HarmonicAnalysisHMatrix.tests,
       PathFindingDebug.tests,
       ViterbiDebug.tests,
       ProbabilityDebug.tests

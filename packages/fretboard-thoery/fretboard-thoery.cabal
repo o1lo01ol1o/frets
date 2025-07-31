@@ -21,6 +21,7 @@ library
     Data.HarmonicAnalysis
     Data.HarmonicAnalysis.ChainOfThirds
     Data.HarmonicAnalysis.Display
+    Data.HarmonicAnalysis.HMatrix
     Data.HarmonicAnalysis.PathFinding
     Data.HarmonicAnalysis.RealTensionData
     Data.HarmonicAnalysis.RiemannMatrix
@@ -79,12 +80,14 @@ test-suite fretboard-thoery-test
     Debug.ViterbiDebug
     Spec.Fretboard
     Spec.HarmonicAnalysis
+    Spec.HarmonicAnalysisHMatrix
 
   build-depends:
     , base              ^>=4.19
     , containers
     , fretboard-thoery
     , hedgehog
+    , hmatrix
     , mod
     , tasty
     , tasty-hedgehog

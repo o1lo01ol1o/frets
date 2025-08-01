@@ -35,8 +35,15 @@ majorMinorDiatonicConfig :: HarmonicAnalysisConfig -- 2×7 system (Major/Minor �
 modalTSDConfig :: HarmonicAnalysisConfig           -- 7×3 system (Greek modes × T-S-D)
 modalDiatonicConfig :: HarmonicAnalysisConfig      -- 7×7 system (Greek modes × all functions)
 
--- Configuration factory
-makeHarmonicConfig :: Int -> HarmonicAnalysisConfig
+-- Configuration factory with proper sum type
+makeHarmonicConfig :: HarmonicConfigType -> HarmonicAnalysisConfig
+
+-- Configuration sum type
+data HarmonicConfigType
+  = MajorMinorTSD        -- 2×3 system
+  | MajorMinorDiatonic   -- 2×7 system
+  | ModalTSD             -- 7×3 system
+  | ModalDiatonic        -- 7×7 system
 ```
 
 ### 3. Weight Tables as HMatrix Vectors
@@ -52,15 +59,7 @@ modalDiatonicWeights :: Vector Double      -- 588 elements (7×7×12)
 
 ## HMatrix-Specific Optimizations
 
-### 1. Optimized Viterbi Path Finding
-
-```haskell
-optimizedViterbiPath :: [RiemannMatrix] -> HarmonicPath
-```
-
-This function provides an HMatrix-optimized version of the Viterbi algorithm, potentially converting dynamic programming operations into efficient matrix computations.
-
-### 2. Optimized Tension Computation
+### 1. Optimized Tension Computation
 
 ```haskell
 optimizedTensionComputation :: TensionTable -> HarmonicPath -> Double
@@ -71,7 +70,7 @@ Uses HMatrix vector operations to compute harmonic tension more efficiently:
 - Computes differences using vectorized operations
 - Calculates total tension through vector summation
 
-### 3. Vectorized Weight Computation
+### 2. Vectorized Weight Computation
 
 ```haskell
 vectorizedWeightComputation :: Vector Double -> [Set.Set (Mod 12)] -> Vector Double
@@ -105,7 +104,7 @@ result = HMatrix.analyzeMajorMinorTSD progression
 
 ```haskell
 -- Use specific configurations
-let config = HMatrix.makeHarmonicConfig 1  -- Major/Minor diatonic
+let config = HMatrix.makeHarmonicConfig HMatrix.MajorMinorDiatonic
     result = HMatrix.harmonicAnalysisWithConfig 1 config progression
 
 -- Or use preset configurations
@@ -126,8 +125,7 @@ let candidates = HMatrix.analyzeMajorMinorTSDMultiCandidate progression
 
 ```haskell
 -- Use optimized functions for performance-critical applications
-let optimizedPath = HMatrix.optimizedViterbiPath matrices
-    tension = HMatrix.optimizedTensionComputation tensionTable path
+let tension = HMatrix.optimizedTensionComputation tensionTable path
     weights = HMatrix.vectorizedWeightComputation weightTable pitchSets
 ```
 
@@ -146,9 +144,10 @@ let optimizedPath = HMatrix.optimizedViterbiPath matrices
 ```
 Data.HarmonicAnalysis.HMatrix
 ├── API-compatible functions (delegate to original)
-├── Configuration presets (converted to HMatrix vectors)
+├── Configuration presets (with proper sum types)
 ├── Weight tables (as HMatrix vectors)
-└── HMatrix-specific optimizations
+├── HMatrix-specific optimizations (tension, vectorized weights)
+└── Simplified windowed analysis (placeholder)
 ```
 
 ## Testing
@@ -181,6 +180,7 @@ tests = testGroup "HarmonicAnalysis HMatrix tests"
 - All configuration options produce valid results
 - Multi-candidate analysis returns same number of candidates
 - HMatrix optimizations don't crash with various inputs
+- Configuration sum types work correctly
 
 ## Performance Considerations
 
@@ -193,18 +193,26 @@ tests = testGroup "HarmonicAnalysis HMatrix tests"
 
 ### Potential Performance Benefits
 
-1. **Vectorized Weight Computation**: O(n) operations become O(1) matrix multiplications
+1. **Vectorized Weight Computation**: Batch processing using matrix multiplication
 2. **Optimized Tension Calculation**: Vector operations instead of list traversals
-3. **Memory Layout**: HMatrix provides better memory locality for large datasets
+3. **Memory Layout**: HMatrix vectors provide better memory locality
+4. **Type Safety**: Proper sum types instead of magic integers for configuration
 
 ## Future Enhancements
 
-### Planned Optimizations
+### Current Limitations & Planned Optimizations
 
-1. **Full Viterbi Implementation**: Complete HMatrix-based dynamic programming
-2. **Batch Analysis**: Efficient processing of multiple progressions simultaneously
-3. **GPU Support**: Potential acceleration through HMatrix's BLAS backend
-4. **Sparse Matrix Support**: For large configuration spaces with sparse weight tables
+**Current Limitations:**
+1. **Windowed Analysis**: Currently simplified - returns single analysis instead of true windowed approach
+2. **Viterbi Algorithm**: Still uses original implementation (HMatrix version removed as placeholder)
+3. **Matrix Operations**: Limited HMatrix usage in core path finding algorithms
+
+**Planned Optimizations:**
+1. **True Windowed Analysis**: Implement proper windowed path finding with HMatrix optimizations
+2. **HMatrix-based Viterbi**: Complete matrix-based dynamic programming implementation
+3. **Batch Analysis**: Efficient processing of multiple progressions simultaneously
+4. **GPU Support**: Potential acceleration through HMatrix's BLAS backend
+5. **Sparse Matrix Support**: For large configuration spaces with sparse weight tables
 
 ### Integration Opportunities
 
@@ -226,6 +234,10 @@ result = HA.analyzeMajorMinorTSD progression
 -- After
 import qualified Data.HarmonicAnalysis.HMatrix as HMatrix
 result = HMatrix.analyzeMajorMinorTSD progression  -- Identical result
+
+-- Configuration creation (improved type safety)
+-- Before: makeHarmonicConfig 1  -- magic number
+-- After:  makeHarmonicConfig MajorMinorDiatonic  -- explicit type
 ```
 
 ### Gradual Adoption
@@ -242,6 +254,7 @@ import qualified Data.HarmonicAnalysis.HMatrix as HMatrix
 -- Mix and match as needed
 let basicResult = HA.analyzeMajorMinorTSD progression
     optimizedTension = HMatrix.optimizedTensionComputation table basicResult
+    vectorizedWeights = HMatrix.vectorizedWeightComputation weights progressions
 ```
 
 ## Dependencies
@@ -258,6 +271,13 @@ This provides efficient linear algebra operations through BLAS/LAPACK.
 
 ## Conclusion
 
-The HMatrix implementation provides a seamless upgrade path for existing harmonic analysis code while offering new optimization opportunities. It maintains full compatibility with the original API while providing efficient vectorized operations for performance-critical applications.
+The HMatrix implementation provides a seamless upgrade path for existing harmonic analysis code while offering targeted optimizations. It maintains full compatibility with the original API while providing:
 
-The implementation demonstrates how modern Haskell libraries like HMatrix can be integrated into existing codebases to provide performance improvements without breaking existing functionality.
+1. **Type Safety**: Proper sum types instead of magic integers for configuration selection
+2. **Targeted Optimizations**: HMatrix-based tension computation and vectorized weight operations
+3. **API Compatibility**: Drop-in replacement for existing functions
+4. **Future-Ready**: Foundation for more extensive HMatrix-based optimizations
+
+**Current Status**: This is a solid foundation with real optimizations in tension computation and weight vectorization, plus improved type safety. The windowed analysis and core Viterbi algorithm remain areas for future HMatrix optimization.
+
+The implementation demonstrates how modern Haskell libraries like HMatrix can be integrated incrementally into existing codebases, providing immediate benefits while establishing groundwork for more extensive optimizations.

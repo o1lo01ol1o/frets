@@ -92,10 +92,10 @@ configurationTests =
             hmatrixResult = HMatrix.analyzeModalDiatonic testProgression
         length (getPath originalResult) @?= length (getPath hmatrixResult),
       testCase "Configuration factory functions" $ do
-        let config0 = HMatrix.makeHarmonicConfig 0
-            config1 = HMatrix.makeHarmonicConfig 1
-            config2 = HMatrix.makeHarmonicConfig 2
-            config3 = HMatrix.makeHarmonicConfig 3
+        let config0 = HMatrix.makeHarmonicConfig HMatrix.MajorMinorTSD
+            config1 = HMatrix.makeHarmonicConfig HMatrix.MajorMinorDiatonic
+            config2 = HMatrix.makeHarmonicConfig HMatrix.ModalTSD
+            config3 = HMatrix.makeHarmonicConfig HMatrix.ModalDiatonic
         -- All configs should be valid (non-crashing)
         seq config0 $ seq config1 $ seq config2 $ seq config3 $ True @?= True
     ]
@@ -128,7 +128,7 @@ comparisonTests =
         let testProgression = [Set.fromList [0, 4, 7], Set.fromList [7, 11, 2], Set.fromList [9, 0, 4]]
         -- Test all four configurations
         mapM_
-          ( \configNum -> do
+          ( \(configNum, configType) -> do
               let originalConfig = case configNum of
                     0 -> Original.majorMinorTSDConfig
                     1 -> Original.majorMinorDiatonicConfig
@@ -136,11 +136,11 @@ comparisonTests =
                     3 -> Original.modalDiatonicConfig
                     _ -> Original.defaultConfig
                   originalResult = Original.harmonicAnalysisWithConfig configNum originalConfig testProgression
-                  hmatrixResult = HMatrix.harmonicAnalysisWithConfig configNum (HMatrix.makeHarmonicConfig configNum) testProgression
+                  hmatrixResult = HMatrix.harmonicAnalysisWithConfig configNum (HMatrix.makeHarmonicConfig configType) testProgression
               -- Results should be structurally similar
               length (getPath originalResult) @?= length (getPath hmatrixResult)
           )
-          [0, 1, 2, 3]
+          [(0, HMatrix.MajorMinorTSD), (1, HMatrix.MajorMinorDiatonic), (2, HMatrix.ModalTSD), (3, HMatrix.ModalDiatonic)]
     ]
 
 propertyTests :: TestTree
@@ -163,10 +163,9 @@ propertyTests =
          in length originalPath == length hmatrixPath,
       QC.testProperty "HMatrix optimizations don't crash" $ \(chords :: [[Int]]) ->
         let chordSets = map (Set.fromList . map (\x -> fromIntegral (x `mod` 12))) chords
-            optimizedPath = HMatrix.optimizedViterbiPath []
             tensionResult = HMatrix.optimizedTensionComputation (Original.defaultTensionTable) (HMatrix.HarmonicPath [])
             vectorResult = HMatrix.vectorizedWeightComputation (HMatrix.majorMinorTSDWeights) chordSets
-         in seq optimizedPath $ seq tensionResult $ seq vectorResult True
+         in seq tensionResult $ seq vectorResult True
     ]
 
 -- Test data constants

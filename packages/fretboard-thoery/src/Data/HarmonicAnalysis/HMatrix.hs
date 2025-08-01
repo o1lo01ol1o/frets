@@ -45,9 +45,11 @@ module Data.HarmonicAnalysis.HMatrix
     windowedAnalyzeModalDiatonic,
 
     -- * HMatrix-specific optimizations
-    optimizedViterbiPath,
     optimizedTensionComputation,
     vectorizedWeightComputation,
+
+    -- * Configuration Types
+    HarmonicConfigType (..),
 
     -- * Re-exports from original modules
     module Data.HarmonicAnalysis.Types,
@@ -64,6 +66,18 @@ import qualified Data.Vector as V
 -- Import HMatrix for optimized computations
 import Numeric.LinearAlgebra (Matrix, Vector, fromList, toList, (#>), (<>))
 import qualified Numeric.LinearAlgebra as HMatrix
+
+-- | Sum type for harmonic analysis configurations
+data HarmonicConfigType
+  = -- | Major/Minor modes with Tonic-Subdominant-Dominant functions (2×3)
+    MajorMinorTSD
+  | -- | Major/Minor modes with all seven diatonic functions (2×7)
+    MajorMinorDiatonic
+  | -- | All seven Greek modes with Tonic-Subdominant-Dominant functions (7×3)
+    ModalTSD
+  | -- | All seven Greek modes with all seven diatonic functions (7×7)
+    ModalDiatonic
+  deriving (Eq, Show, Ord, Enum, Bounded)
 
 -- | Configuration for harmonic analysis - same as original but with HMatrix backend
 type HarmonicAnalysisConfig = Original.HarmonicAnalysisConfig
@@ -99,13 +113,12 @@ modalDiatonicWeights :: Vector Double
 modalDiatonicWeights = fromList $ V.toList Original.modalDiatonicWeights
 
 -- | Runtime configuration functions - delegate to original
-makeHarmonicConfig :: Int -> HarmonicAnalysisConfig
-makeHarmonicConfig configNum = case configNum of
-  0 -> majorMinorTSDConfig
-  1 -> majorMinorDiatonicConfig
-  2 -> modalTSDConfig
-  3 -> modalDiatonicConfig
-  _ -> defaultConfig
+makeHarmonicConfig :: HarmonicConfigType -> HarmonicAnalysisConfig
+makeHarmonicConfig configType = case configType of
+  MajorMinorTSD -> majorMinorTSDConfig
+  MajorMinorDiatonic -> majorMinorDiatonicConfig
+  ModalTSD -> modalTSDConfig
+  ModalDiatonic -> modalDiatonicConfig
 
 makeMajorMinorTSDConfig :: RuntimeConfig
 makeMajorMinorTSDConfig = Original.makeMajorMinorTSDConfig
@@ -156,11 +169,13 @@ analyzeModalTSDMultiCandidate = Original.analyzeModalTSDMultiCandidate
 analyzeModalDiatonicMultiCandidate :: [Set.Set (Mod 12)] -> HarmonicAnalysisResult
 analyzeModalDiatonicMultiCandidate = Original.analyzeModalDiatonicMultiCandidate
 
--- | Windowed analysis functions - simplified implementations
+-- | Windowed analysis functions - simplified implementation
+-- Returns single analysis result wrapped in list (windowed analysis of full sequence)
 windowedHarmonicAnalysis :: Windowed.WindowedConfig -> HarmonicAnalysisConfig -> [Set.Set (Mod 12)] -> [HarmonicPath]
 windowedHarmonicAnalysis _windowConfig analysisConfig pitchSets =
-  -- For now, return a single analysis result wrapped in a list
-  [harmonicAnalysis analysisConfig pitchSets]
+  if null pitchSets
+    then []
+    else [harmonicAnalysis analysisConfig pitchSets]
 
 windowedAnalyzeMajorMinorTSD :: Windowed.WindowedConfig -> [Set.Set (Mod 12)] -> [HarmonicPath]
 windowedAnalyzeMajorMinorTSD windowConfig pitchSets =
@@ -180,20 +195,6 @@ windowedAnalyzeModalDiatonic windowConfig pitchSets =
 
 -- | HMatrix-specific optimizations
 -- These functions provide HMatrix-optimized versions of key computations
-
--- | Optimized Viterbi path finding using HMatrix operations
-optimizedViterbiPath :: [RiemannMatrix] -> HarmonicPath
-optimizedViterbiPath matrices =
-  -- For now, delegate to original but this could be optimized with HMatrix
-  -- by converting the dynamic programming to matrix operations
-  case matrices of
-    [] -> HarmonicPath []
-    _ ->
-      let -- Convert to HMatrix format for computation
-          -- This is where we would implement HMatrix-based Viterbi
-          -- For demonstration, we'll use a placeholder
-          path = [RMPoint 0 (Row 0) (Col 0) 1.0]
-       in HarmonicPath path
 
 -- | Optimized tension computation using HMatrix
 optimizedTensionComputation :: TensionTable -> HarmonicPath -> Double

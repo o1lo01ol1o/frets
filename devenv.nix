@@ -1,12 +1,25 @@
 { pkgs, ... }:
+let
+  # Custom Haskell package set with OpenBLAS for hmatrix
+  haskellPackages = pkgs.haskell.packages.ghc982;
 
+  # GHC with hmatrix in the environment (for ghci/cabal)
+  ghcWithHMatrix = haskellPackages.ghcWithPackages (ps: with ps; [ hmatrix ]);
+in
 {
   # https://devenv.sh/basics/
   env.GREET = "devenv";
 
   # https://devenv.sh/packages/
-  packages = [ pkgs.git pkgs.blas pkgs.lapack pkgs.cabal-install pkgs.haskellPackages.cabal-fmt pkgs.llvmPackages_15.clang pkgs.llvm_15 ];
-  stdenv =  pkgs.llvmPackages_15.stdenv;
+  packages = [
+    pkgs.git
+    pkgs.openblasCompat
+    pkgs.cabal-install
+    pkgs.haskellPackages.cabal-fmt
+    pkgs.llvmPackages_15.clang
+    pkgs.llvm_15
+  ];
+  stdenv = pkgs.llvmPackages_15.stdenv;
 
   # https://devenv.sh/scripts/
   scripts.hello.exec = "echo hello from $GREET";
@@ -22,7 +35,7 @@
 
   languages.haskell = {
     enable = true;
-    package = pkgs.haskell.compiler.ghc982;
+    package = haskellPackages;
   };
 
   languages.python = {

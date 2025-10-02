@@ -1,80 +1,117 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 module Spec.HarmonicAnalysis (tests) where
 
--- Import the modules under test
-import qualified Data.HarmonicAnalysis
-import qualified Data.HarmonicAnalysis.ChainOfThirds as ChainOfThirds
-import qualified Data.HarmonicAnalysis.Display as Display
-import qualified Data.HarmonicAnalysis.PathFinding as PathFinding
-import qualified Data.HarmonicAnalysis.RealTensionData as RealTensionData
-import qualified Data.HarmonicAnalysis.RiemannMatrix as RiemannMatrix
-import qualified Data.HarmonicAnalysis.Tension as Tension
-import qualified Data.HarmonicAnalysis.Types as Types
-import Test.Tasty
-import Test.Tasty.HUnit
-import qualified Test.Tasty.Hedgehog as H
-import qualified Test.Tasty.QuickCheck as QC
+import Control.Monad (filterM, zipWithM_)
+import Data.Aeson (FromJSON (..), eitherDecode, withObject, (.:))
+import qualified Data.ByteString.Lazy as BL
+import Data.HarmonicAnalysis
+import Data.HarmonicAnalysis.Types
+import qualified Data.HarmonicAnalysis.WindowedPathFinding as Windowed
+import Data.Mod (Mod, unMod)
+import qualified Data.Set as Set
+import GHC.Generics (Generic)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.HUnit (assertBool, assertEqual, testCase)
+import System.Directory (doesFileExist)
+import System.FilePath ((</>))
+
+-- | Minimal representation of a chord extracted from the Mozart example.
+newtype ExtractedChord = ExtractedChord
+  { pitches :: [Int]
+  }
+  deriving (Show, Generic)
+
+instance FromJSON ExtractedChord where
+  parseJSON =
+    withObject "ExtractedChord" $ \obj ->
+      ExtractedChord <$> obj .: "pitches"
+
+loadExtractedChords :: FilePath -> IO [ExtractedChord]
+loadExtractedChords path = do
+  bytes <- BL.readFile path
+  case eitherDecode bytes of
+    Left err -> fail ("Unable to decode extracted chord progression: " <> err)
+    Right chords -> pure chords
+
+pitchSet :: [Int] -> Set.Set (Mod 12)
+pitchSet = Set.fromList . fmap fromIntegral
+
+mozartProgressionPath :: IO AnnotatedHarmonicPath
+mozartProgressionPath = do
+  chordsPath <- discoverChordFile
+  chords <- loadExtractedChords chordsPath
+  let progression = fmap (pitchSet . pitches) chords
+      runtimeConfig = makeMajorMinorTSDConfig
+      windowConfig =
+        Windowed.defaultWindowedConfig
+          { Windowed.causalDepth = 1,
+            Windowed.finalDepth = 2
+          }
+      windowedPath = windowedHarmonicAnalysis runtimeConfig windowConfig progression
+   in pure (annotateHarmonicPath runtimeConfig progression windowedPath)
+
+discoverChordFile :: IO FilePath
+discoverChordFile = do
+  let candidates =
+        [ "docs" </> "extracted_chords.json",
+          ".." </> "docs" </> "extracted_chords.json",
+          ".." </> ".." </> "docs" </> "extracted_chords.json"
+        ]
+  existing <- filterM doesFileExist candidates
+  case existing of
+    (path : _) -> pure path
+    [] ->
+      fail
+        "Unable to locate docs/extracted_chords.json from the current working directory."
+
+mozartExpectedSequence ::
+  [(Mode, Function, Int, Maybe String)]
+mozartExpectedSequence =
+  [ (Ionian, Tonic, 9, Just "I"),
+    (Ionian, Tonic, 9, Just "I"),
+    (Ionian, Dominant, 9, Just "V"),
+    (Ionian, Tonic, 4, Just "I")
+  ]
 
 tests :: TestTree
 tests =
   testGroup
-    "HarmonicAnalysis tests"
-    [ unitTests,
-      propertyTests,
-      riemannMatrixTests,
-      pathFindingTests,
-      tensionTests
+    "HarmonicAnalysis"
+    [ mozartWindowedAnalysisTest
     ]
 
-unitTests :: TestTree
-unitTests =
-  testGroup
-    "HarmonicAnalysis unit tests"
-    [ testCase "Placeholder harmonic analysis test" $ do
-        -- Add actual harmonic analysis tests here
-        -- Example: let analysis = Data.HarmonicAnalysis.someFunction
-        -- analysis @?= expectedResult
-        True @?= True
-    ]
+mozartWindowedAnalysisTest :: TestTree
+mozartWindowedAnalysisTest =
+  testCase "Windowed analysis reproduces Mozart K.331 path" $ do
+    AnnotatedHarmonicPath steps <- mozartProgressionPath
 
-propertyTests :: TestTree
-propertyTests =
-  testGroup
-    "HarmonicAnalysis property tests"
-    [ QC.testProperty "Placeholder harmonic analysis property" $ \x ->
-        -- Add actual property tests here
-        -- Example: Data.HarmonicAnalysis.someProperty x == expectedBehavior x
-        (x :: Int) >= x
-    ]
+    let expectedLength = length mozartExpectedSequence
+    assertEqual "windowed path length" expectedLength (length steps)
 
-riemannMatrixTests :: TestTree
-riemannMatrixTests =
-  testGroup
-    "Riemann Matrix tests"
-    [ testCase "Placeholder Riemann matrix test" $ do
-        -- Add actual Riemann matrix tests here
-        -- Example: let matrix = RiemannMatrix.someFunction
-        -- matrix @?= expectedMatrix
-        True @?= True
-    ]
+    zipWithM_ compareStep steps mozartExpectedSequence
 
-pathFindingTests :: TestTree
-pathFindingTests =
-  testGroup
-    "Path Finding tests"
-    [ testCase "Placeholder path finding test" $ do
-        -- Add actual path finding tests here
-        -- Example: let path = PathFinding.findPath start end
-        -- path @?= expectedPath
-        True @?= True
-    ]
+    -- Ensure matrix indices advance monotonically and cover every chord
+    let indices = fmap (matrixIndex . stepPoint) steps
+    assertEqual "matrix indices" [0 .. expectedLength - 1] indices
 
-tensionTests :: TestTree
-tensionTests =
-  testGroup
-    "Tension Analysis tests"
-    [ testCase "Placeholder tension test" $ do
-        -- Add actual tension analysis tests here
-        -- Example: let tension = Tension.calculateTension chord
-        -- tension @?= expectedTension
-        True @?= True
-    ]
+    -- Ensure we preserved the original pitch-class sets in each annotation
+    let pitchSets = fmap stepPitchClasses steps
+    assertBool "pitch-class sets should not be empty" (all (not . Set.null) pitchSets)
+
+compareStep :: HarmonicStep -> (Mode, Function, Int, Maybe String) -> IO ()
+compareStep step (expectedMode, expectedFunction, expectedTonality, expectedRoman) = do
+  let harmony = stepHarmony step
+      point = stepPoint step
+      actualTonality = fromIntegral (unMod (unCol (col point)))
+
+  assertEqual "mode" expectedMode (annotationMode harmony)
+  assertEqual "function" expectedFunction (annotationFunction harmony)
+  assertEqual
+    "degree"
+    (functionToDegree expectedFunction)
+    (annotationDegree harmony)
+  assertEqual "roman numeral" expectedRoman (annotationRomanNumeral harmony)
+  assertEqual "tonality column" expectedTonality actualTonality

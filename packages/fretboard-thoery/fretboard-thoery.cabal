@@ -27,12 +27,14 @@ library
     Data.HarmonicAnalysis.RiemannMatrix
     Data.HarmonicAnalysis.Tension
     Data.HarmonicAnalysis.Types
+    Data.HarmonicAnalysis.WindowedPathFinding
     Finger
     Finger.TH
     Fretboard
+    Note
     Modulation
 
-  other-modules:    Data.HarmonicAnalysis.WindowedPathFinding
+  other-modules:
   build-depends:
     , adjunctions
     , array
@@ -75,20 +77,20 @@ test-suite fretboard-thoery-test
   hs-source-dirs:   test
   main-is:          Main.hs
   other-modules:
-    Debug.PathFindingDebug
-    Debug.ProbabilityDebug
-    Debug.ViterbiDebug
-    Spec.Fretboard
     Spec.HarmonicAnalysis
     Spec.HarmonicAnalysisHMatrix
 
   build-depends:
+    , aeson
     , base              ^>=4.19
+    , bytestring
     , containers
+    , directory
     , fretboard-thoery
     , hedgehog
     , hmatrix
     , mod
+    , filepath
     , tasty
     , tasty-hedgehog
     , tasty-hunit

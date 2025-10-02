@@ -348,7 +348,8 @@ data Tetrad d = Tetrad (Triad d) d
 type Tetrads = [(Mod 7, Tetrad (Mod 12))]
 
 data Degree = I | II | III | IV | V | VI | VII
-  deriving stock (Show, Read, Ord, Eq, Bounded, Enum)
+  deriving stock (Show, Read, Ord, Eq, Bounded, Enum, Generic)
+  deriving anyclass (NFData)
 
 data CadentialDegree n degreeType = CadentialDegree
   { _cadentialScale :: HeptatonicScale (Mod n),

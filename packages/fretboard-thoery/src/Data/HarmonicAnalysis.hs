@@ -5,6 +5,11 @@ module Data.HarmonicAnalysis
     harmonicAnalysis,
     harmonicAnalysisWithConfig,
     harmonicAnalysisWithRuntimeConfig,
+    harmonicAnalysisAnnotated,
+    harmonicAnalysisAnnotatedWithConfig,
+    harmonicAnalysisAnnotatedWithRuntimeConfig,
+    annotateHarmonicPath,
+    annotateHarmonicPathForConfig,
     HarmonicAnalysisConfig (..),
     defaultConfig,
 
@@ -70,6 +75,7 @@ import Data.HarmonicAnalysis.Types
 import Data.HarmonicAnalysis.Types (HarmonicAnalysisResult (..))
 import qualified Data.HarmonicAnalysis.WindowedPathFinding as Windowed
 import Data.Mod (Mod, unMod)
+import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 import Data.Vector (Vector)
 import qualified Data.Vector as V
@@ -1389,6 +1395,74 @@ harmonicAnalysisWithRuntimeConfig config pitchSets =
       if null chainList
         then emptyRiemannMatrixWithConfig cfg
         else compute3rdChain cfg chainList pitchSet
+
+-- | Annotated harmonic analysis using the default configuration (major/minor TSD).
+harmonicAnalysisAnnotated ::
+  HarmonicAnalysisConfig ->
+  [Set.Set (Mod 12)] ->
+  AnnotatedHarmonicPath
+harmonicAnalysisAnnotated config pitchSets =
+  harmonicAnalysisAnnotatedWithConfig 0 config pitchSets
+
+-- | Annotated harmonic analysis with a Java-compatibility configuration number.
+harmonicAnalysisAnnotatedWithConfig ::
+  Int ->
+  HarmonicAnalysisConfig ->
+  [Set.Set (Mod 12)] ->
+  AnnotatedHarmonicPath
+harmonicAnalysisAnnotatedWithConfig configNum config pitchSets =
+  annotateHarmonicPathForConfig configNum pitchSets (harmonicAnalysisWithConfig configNum config pitchSets)
+
+-- | Annotated harmonic analysis with a full runtime configuration.
+harmonicAnalysisAnnotatedWithRuntimeConfig ::
+  RuntimeConfig ->
+  [Set.Set (Mod 12)] ->
+  AnnotatedHarmonicPath
+harmonicAnalysisAnnotatedWithRuntimeConfig config pitchSets =
+  annotateHarmonicPath config pitchSets (harmonicAnalysisWithRuntimeConfig config pitchSets)
+
+-- | Attach pitch-set and functional information to a harmonic path for a runtime configuration.
+annotateHarmonicPath ::
+  RuntimeConfig ->
+  [Set.Set (Mod 12)] ->
+  HarmonicPath ->
+  AnnotatedHarmonicPath
+annotateHarmonicPath config pitchSets (HarmonicPath points) =
+  let pitchVector = V.fromList pitchSets
+      annotatePoint point =
+        let pitchSet = fromMaybe Set.empty (pitchVector V.!? matrixIndex point)
+            (mode, function) = rowToModeFunctionWithConfig config (unRow $ row point)
+            harmony =
+              FunctionalHarmonyAnnotation
+                { annotationMode = mode,
+                  annotationFunction = function,
+                  annotationDegree = functionToDegree function,
+                  annotationRomanNumeral = functionalRomanNumeral mode function
+                }
+         in HarmonicStep point pitchSet harmony
+   in AnnotatedHarmonicPath (map annotatePoint points)
+
+-- | Annotate a harmonic path using the Java configuration number used by
+-- 'harmonicAnalysisWithConfig'.
+annotateHarmonicPathForConfig ::
+  Int ->
+  [Set.Set (Mod 12)] ->
+  HarmonicPath ->
+  AnnotatedHarmonicPath
+annotateHarmonicPathForConfig configNum pitchSets (HarmonicPath points) =
+  let pitchVector = V.fromList pitchSets
+      annotatePoint point =
+        let pitchSet = fromMaybe Set.empty (pitchVector V.!? matrixIndex point)
+            (mode, function) = rowToModeFunctionForConfig configNum (unRow $ row point)
+            harmony =
+              FunctionalHarmonyAnnotation
+                { annotationMode = mode,
+                  annotationFunction = function,
+                  annotationDegree = functionToDegree function,
+                  annotationRomanNumeral = functionalRomanNumeral mode function
+                }
+         in HarmonicStep point pitchSet harmony
+   in AnnotatedHarmonicPath (map annotatePoint points)
 
 -- | Configuration-aware harmonic analysis function
 -- Uses specific Java configuration for matrix dimensions and weight interpretation

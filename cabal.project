@@ -1,3 +1,6 @@
 packages:
     packages/fretboard-thoery
     packages/fretboard-diagram
+
+package hmatrix
+  flags: +openblas

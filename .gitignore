@@ -26,4 +26,7 @@ devenv.local.nix
 
 .vscode
 
-rubato-src-20070720/bin
+rubato-src-20070720
+
+dist-newstyle/
+.DS_STORE

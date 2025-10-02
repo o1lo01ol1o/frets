@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- |
@@ -24,6 +25,9 @@ module Data.HarmonicAnalysis.Types
     HarmonicPath (..),
     HarmonicAnalysisResult (..),
     RiemannMatrix (..),
+    FunctionalHarmonyAnnotation (..),
+    HarmonicStep (..),
+    AnnotatedHarmonicPath (..),
 
     -- * Runtime Configuration
     RuntimeConfig (..),
@@ -73,6 +77,10 @@ module Data.HarmonicAnalysis.Types
     -- * Backward Compatibility
     major,
     minor,
+
+    -- * Functional labeling helpers
+    functionalRomanNumeral,
+    functionToDegree,
   )
 where
 
@@ -107,7 +115,8 @@ data RMPoint = RMPoint
     -- | Weight/strength of interpretation
     value :: Double
   }
-  deriving (Eq, Show, Generic)
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (NFData)
 
 -- | A complete harmonic analysis, consisting of a sequence of interpretations
 -- forming an optimal path through the Riemann matrices.
@@ -126,6 +135,33 @@ data HarmonicAnalysisResult = HarmonicAnalysisResult
     hasTies :: Bool
   }
   deriving (Eq, Show, Generic)
+
+-- | Functional annotation encompassing modal context, diatonic function,
+-- and (when available) a Roman numeral realisation.
+data FunctionalHarmonyAnnotation = FunctionalHarmonyAnnotation
+  { annotationMode :: Mode,
+    annotationFunction :: Function,
+    annotationDegree :: Degree,
+    annotationRomanNumeral :: Maybe String
+  }
+  deriving (Eq, Show, Generic, NFData)
+
+-- | A harmonic analysis step enriched with the originating pitch-class set
+-- and functional label computed from the runtime configuration.
+data HarmonicStep = HarmonicStep
+  { stepPoint :: RMPoint,
+    stepPitchClasses :: Set (Mod 12),
+    stepHarmony :: FunctionalHarmonyAnnotation
+  }
+  deriving (Eq, Show, Generic, NFData)
+
+-- | An annotated harmonic path that preserves both the original Riemann points
+-- and their pitch/functional interpretation.
+newtype AnnotatedHarmonicPath = AnnotatedHarmonicPath
+  { getAnnotatedSteps :: [HarmonicStep]
+  }
+  deriving (Eq, Show, Generic)
+  deriving anyclass (NFData)
 
 -- | Available modes for harmonic analysis.
 -- Supports both the simple Major/Minor system and full 7 Greek modes.
@@ -395,6 +431,43 @@ modeFunctionToRowForConfig configNum mode function =
         Nothing -> 0 -- Default to first function
       numFuncs = length functions
    in Row $ modeIdx * numFuncs + funcIdx
+
+-- | Map a diatonic function to its corresponding scale degree.
+functionToDegree :: Function -> Degree
+functionToDegree Tonic = I
+functionToDegree Supertonic = II
+functionToDegree Mediant = III
+functionToDegree Subdominant = IV
+functionToDegree Dominant = V
+functionToDegree Submediant = VI
+functionToDegree LeadingTone = VII
+
+-- | Render a Roman numeral spelling for supported modal contexts.
+functionalRomanNumeral :: Mode -> Function -> Maybe String
+functionalRomanNumeral mode function =
+  let degree = functionToDegree function
+   in case mode of
+        Ionian -> Just (degreeToRomanIonian degree)
+        Aeolian -> Just (degreeToRomanAeolian degree)
+        _ -> Nothing
+
+degreeToRomanIonian :: Degree -> String
+degreeToRomanIonian I = "I"
+degreeToRomanIonian II = "II"
+degreeToRomanIonian III = "III"
+degreeToRomanIonian IV = "IV"
+degreeToRomanIonian V = "V"
+degreeToRomanIonian VI = "VI"
+degreeToRomanIonian VII = "VII"
+
+degreeToRomanAeolian :: Degree -> String
+degreeToRomanAeolian I = "i"
+degreeToRomanAeolian II = "ii°"
+degreeToRomanAeolian III = "III"
+degreeToRomanAeolian IV = "iv"
+degreeToRomanAeolian V = "v"
+degreeToRomanAeolian VI = "VI"
+degreeToRomanAeolian VII = "VII"
 
 -- Helper function for finding items in association lists
 findInList :: (Eq a) => a -> [(a, b)] -> Maybe b

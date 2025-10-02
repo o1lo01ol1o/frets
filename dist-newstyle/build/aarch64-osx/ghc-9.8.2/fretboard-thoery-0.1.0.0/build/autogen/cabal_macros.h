@@ -10,16 +10,26 @@
   (major1) == 0 && (major2) <  1 || \
   (major1) == 0 && (major2) == 1 && (minor) <= 0)
 #endif /* MIN_VERSION_fretboard_thoery */
-/* package adjunctions-4.4.2 */
+/* package adjunctions-4.4.3 */
 #ifndef VERSION_adjunctions
-#define VERSION_adjunctions "4.4.2"
+#define VERSION_adjunctions "4.4.3"
 #endif /* VERSION_adjunctions */
 #ifndef MIN_VERSION_adjunctions
 #define MIN_VERSION_adjunctions(major1,major2,minor) (\
   (major1) <  4 || \
   (major1) == 4 && (major2) <  4 || \
-  (major1) == 4 && (major2) == 4 && (minor) <= 2)
+  (major1) == 4 && (major2) == 4 && (minor) <= 3)
 #endif /* MIN_VERSION_adjunctions */
+/* package array-0.5.6.0 */
+#ifndef VERSION_array
+#define VERSION_array "0.5.6.0"
+#endif /* VERSION_array */
+#ifndef MIN_VERSION_array
+#define MIN_VERSION_array(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  5 || \
+  (major1) == 0 && (major2) == 5 && (minor) <= 6)
+#endif /* MIN_VERSION_array */
 /* package base-4.19.1.0 */
 #ifndef VERSION_base
 #define VERSION_base "4.19.1.0"
@@ -40,15 +50,35 @@
   (major1) == 5 && (major2) <  6 || \
   (major1) == 5 && (major2) == 6 && (minor) <= 2)
 #endif /* MIN_VERSION_bifunctors */
-/* package comonad-5.0.8 */
+/* package comfort-array-0.5.5 */
+#ifndef VERSION_comfort_array
+#define VERSION_comfort_array "0.5.5"
+#endif /* VERSION_comfort_array */
+#ifndef MIN_VERSION_comfort_array
+#define MIN_VERSION_comfort_array(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  5 || \
+  (major1) == 0 && (major2) == 5 && (minor) <= 5)
+#endif /* MIN_VERSION_comfort_array */
+/* package comfort-array-shape-0.0 */
+#ifndef VERSION_comfort_array_shape
+#define VERSION_comfort_array_shape "0.0"
+#endif /* VERSION_comfort_array_shape */
+#ifndef MIN_VERSION_comfort_array_shape
+#define MIN_VERSION_comfort_array_shape(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  0 || \
+  (major1) == 0 && (major2) == 0 && (minor) <= 0)
+#endif /* MIN_VERSION_comfort_array_shape */
+/* package comonad-5.0.9 */
 #ifndef VERSION_comonad
-#define VERSION_comonad "5.0.8"
+#define VERSION_comonad "5.0.9"
 #endif /* VERSION_comonad */
 #ifndef MIN_VERSION_comonad
 #define MIN_VERSION_comonad(major1,major2,minor) (\
   (major1) <  5 || \
   (major1) == 5 && (major2) <  0 || \
-  (major1) == 5 && (major2) == 0 && (minor) <= 8)
+  (major1) == 5 && (major2) == 0 && (minor) <= 9)
 #endif /* MIN_VERSION_comonad */
 /* package comonad-transformers-4.0 */
 #ifndef VERSION_comonad_transformers
@@ -70,6 +100,16 @@
   (major1) == 0 && (major2) <  6 || \
   (major1) == 0 && (major2) == 6 && (minor) <= 8)
 #endif /* MIN_VERSION_containers */
+/* package deepseq-1.5.0.0 */
+#ifndef VERSION_deepseq
+#define VERSION_deepseq "1.5.0.0"
+#endif /* VERSION_deepseq */
+#ifndef MIN_VERSION_deepseq
+#define MIN_VERSION_deepseq(major1,major2,minor) (\
+  (major1) <  1 || \
+  (major1) == 1 && (major2) <  5 || \
+  (major1) == 1 && (major2) == 5 && (minor) <= 0)
+#endif /* MIN_VERSION_deepseq */
 /* package distributive-0.6.2.1 */
 #ifndef VERSION_distributive
 #define VERSION_distributive "0.6.2.1"
@@ -80,6 +120,16 @@
   (major1) == 0 && (major2) <  6 || \
   (major1) == 0 && (major2) == 6 && (minor) <= 2)
 #endif /* MIN_VERSION_distributive */
+/* package fixed-length-0.2.3.1 */
+#ifndef VERSION_fixed_length
+#define VERSION_fixed_length "0.2.3.1"
+#endif /* VERSION_fixed_length */
+#ifndef MIN_VERSION_fixed_length
+#define MIN_VERSION_fixed_length(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  2 || \
+  (major1) == 0 && (major2) == 2 && (minor) <= 3)
+#endif /* MIN_VERSION_fixed_length */
 /* package free-5.2 */
 #ifndef VERSION_free
 #define VERSION_free "5.2"
@@ -90,16 +140,26 @@
   (major1) == 5 && (major2) <  2 || \
   (major1) == 5 && (major2) == 2 && (minor) <= 0)
 #endif /* MIN_VERSION_free */
-/* package hedgehog-1.5 */
+/* package hedgehog-1.7 */
 #ifndef VERSION_hedgehog
-#define VERSION_hedgehog "1.5"
+#define VERSION_hedgehog "1.7"
 #endif /* VERSION_hedgehog */
 #ifndef MIN_VERSION_hedgehog
 #define MIN_VERSION_hedgehog(major1,major2,minor) (\
   (major1) <  1 || \
-  (major1) == 1 && (major2) <  5 || \
-  (major1) == 1 && (major2) == 5 && (minor) <= 0)
+  (major1) == 1 && (major2) <  7 || \
+  (major1) == 1 && (major2) == 7 && (minor) <= 0)
 #endif /* MIN_VERSION_hedgehog */
+/* package hmatrix-0.20.2 */
+#ifndef VERSION_hmatrix
+#define VERSION_hmatrix "0.20.2"
+#endif /* VERSION_hmatrix */
+#ifndef MIN_VERSION_hmatrix
+#define MIN_VERSION_hmatrix(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  20 || \
+  (major1) == 0 && (major2) == 20 && (minor) <= 2)
+#endif /* MIN_VERSION_hmatrix */
 /* package lattices-2.2.1 */
 #ifndef VERSION_lattices
 #define VERSION_lattices "2.2.1"
@@ -110,35 +170,35 @@
   (major1) == 2 && (major2) <  2 || \
   (major1) == 2 && (major2) == 2 && (minor) <= 1)
 #endif /* MIN_VERSION_lattices */
-/* package lens-5.3.2 */
+/* package lens-5.3.5 */
 #ifndef VERSION_lens
-#define VERSION_lens "5.3.2"
+#define VERSION_lens "5.3.5"
 #endif /* VERSION_lens */
 #ifndef MIN_VERSION_lens
 #define MIN_VERSION_lens(major1,major2,minor) (\
   (major1) <  5 || \
   (major1) == 5 && (major2) <  3 || \
-  (major1) == 5 && (major2) == 3 && (minor) <= 2)
+  (major1) == 5 && (major2) == 3 && (minor) <= 5)
 #endif /* MIN_VERSION_lens */
-/* package linear-1.23 */
+/* package linear-1.23.2 */
 #ifndef VERSION_linear
-#define VERSION_linear "1.23"
+#define VERSION_linear "1.23.2"
 #endif /* VERSION_linear */
 #ifndef MIN_VERSION_linear
 #define MIN_VERSION_linear(major1,major2,minor) (\
   (major1) <  1 || \
   (major1) == 1 && (major2) <  23 || \
-  (major1) == 1 && (major2) == 23 && (minor) <= 0)
+  (major1) == 1 && (major2) == 23 && (minor) <= 2)
 #endif /* MIN_VERSION_linear */
-/* package mod-0.2.0.1 */
+/* package mod-0.2.1.0 */
 #ifndef VERSION_mod
-#define VERSION_mod "0.2.0.1"
+#define VERSION_mod "0.2.1.0"
 #endif /* VERSION_mod */
 #ifndef MIN_VERSION_mod
 #define MIN_VERSION_mod(major1,major2,minor) (\
   (major1) <  0 || \
   (major1) == 0 && (major2) <  2 || \
-  (major1) == 0 && (major2) == 2 && (minor) <= 0)
+  (major1) == 0 && (major2) == 2 && (minor) <= 1)
 #endif /* MIN_VERSION_mod */
 /* package mtl-2.3.1 */
 #ifndef VERSION_mtl
@@ -150,6 +210,16 @@
   (major1) == 2 && (major2) <  3 || \
   (major1) == 2 && (major2) == 3 && (minor) <= 1)
 #endif /* MIN_VERSION_mtl */
+/* package non-empty-0.3.5 */
+#ifndef VERSION_non_empty
+#define VERSION_non_empty "0.3.5"
+#endif /* VERSION_non_empty */
+#ifndef MIN_VERSION_non_empty
+#define MIN_VERSION_non_empty(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  3 || \
+  (major1) == 0 && (major2) == 3 && (minor) <= 5)
+#endif /* MIN_VERSION_non_empty */
 /* package parallel-3.2.2.0 */
 #ifndef VERSION_parallel
 #define VERSION_parallel "3.2.2.0"
@@ -170,15 +240,15 @@
   (major1) == 1 && (major2) <  5 || \
   (major1) == 1 && (major2) == 5 && (minor) <= 0)
 #endif /* MIN_VERSION_pqueue */
-/* package profunctors-5.6.2 */
+/* package profunctors-5.6.3 */
 #ifndef VERSION_profunctors
-#define VERSION_profunctors "5.6.2"
+#define VERSION_profunctors "5.6.3"
 #endif /* VERSION_profunctors */
 #ifndef MIN_VERSION_profunctors
 #define MIN_VERSION_profunctors(major1,major2,minor) (\
   (major1) <  5 || \
   (major1) == 5 && (major2) <  6 || \
-  (major1) == 5 && (major2) == 6 && (minor) <= 2)
+  (major1) == 5 && (major2) == 6 && (minor) <= 3)
 #endif /* MIN_VERSION_profunctors */
 /* package semigroups-0.20 */
 #ifndef VERSION_semigroups
@@ -190,15 +260,15 @@
   (major1) == 0 && (major2) <  20 || \
   (major1) == 0 && (major2) == 20 && (minor) <= 0)
 #endif /* MIN_VERSION_semigroups */
-/* package tasty-1.5 */
+/* package tasty-1.5.3 */
 #ifndef VERSION_tasty
-#define VERSION_tasty "1.5"
+#define VERSION_tasty "1.5.3"
 #endif /* VERSION_tasty */
 #ifndef MIN_VERSION_tasty
 #define MIN_VERSION_tasty(major1,major2,minor) (\
   (major1) <  1 || \
   (major1) == 1 && (major2) <  5 || \
-  (major1) == 1 && (major2) == 5 && (minor) <= 0)
+  (major1) == 1 && (major2) == 5 && (minor) <= 3)
 #endif /* MIN_VERSION_tasty */
 /* package tasty-hedgehog-1.4.0.2 */
 #ifndef VERSION_tasty_hedgehog
@@ -210,15 +280,15 @@
   (major1) == 1 && (major2) <  4 || \
   (major1) == 1 && (major2) == 4 && (minor) <= 0)
 #endif /* MIN_VERSION_tasty_hedgehog */
-/* package tasty-quickcheck-0.11 */
+/* package tasty-quickcheck-0.11.1 */
 #ifndef VERSION_tasty_quickcheck
-#define VERSION_tasty_quickcheck "0.11"
+#define VERSION_tasty_quickcheck "0.11.1"
 #endif /* VERSION_tasty_quickcheck */
 #ifndef MIN_VERSION_tasty_quickcheck
 #define MIN_VERSION_tasty_quickcheck(major1,major2,minor) (\
   (major1) <  0 || \
   (major1) == 0 && (major2) <  11 || \
-  (major1) == 0 && (major2) == 11 && (minor) <= 0)
+  (major1) == 0 && (major2) == 11 && (minor) <= 1)
 #endif /* MIN_VERSION_tasty_quickcheck */
 /* package transformers-0.6.1.0 */
 #ifndef VERSION_transformers
@@ -230,15 +300,15 @@
   (major1) == 0 && (major2) <  6 || \
   (major1) == 0 && (major2) == 6 && (minor) <= 1)
 #endif /* MIN_VERSION_transformers */
-/* package vector-0.13.1.0 */
+/* package vector-0.13.2.0 */
 #ifndef VERSION_vector
-#define VERSION_vector "0.13.1.0"
+#define VERSION_vector "0.13.2.0"
 #endif /* VERSION_vector */
 #ifndef MIN_VERSION_vector
 #define MIN_VERSION_vector(major1,major2,minor) (\
   (major1) <  0 || \
   (major1) == 0 && (major2) <  13 || \
-  (major1) == 0 && (major2) == 13 && (minor) <= 1)
+  (major1) == 0 && (major2) == 13 && (minor) <= 2)
 #endif /* MIN_VERSION_vector */
 /* package vector-th-unbox-0.2.2 */
 #ifndef VERSION_vector_th_unbox
@@ -251,15 +321,15 @@
   (major1) == 0 && (major2) == 2 && (minor) <= 2)
 #endif /* MIN_VERSION_vector_th_unbox */
 
-/* tool gcc-16.0.6 */
+/* tool gcc-19.1.7 */
 #ifndef TOOL_VERSION_gcc
-#define TOOL_VERSION_gcc "16.0.6"
+#define TOOL_VERSION_gcc "19.1.7"
 #endif /* TOOL_VERSION_gcc */
 #ifndef MIN_TOOL_VERSION_gcc
 #define MIN_TOOL_VERSION_gcc(major1,major2,minor) (\
-  (major1) <  16 || \
-  (major1) == 16 && (major2) <  0 || \
-  (major1) == 16 && (major2) == 0 && (minor) <= 6)
+  (major1) <  19 || \
+  (major1) == 19 && (major2) <  1 || \
+  (major1) == 19 && (major2) == 1 && (minor) <= 7)
 #endif /* MIN_TOOL_VERSION_gcc */
 /* tool ghc-9.8.2 */
 #ifndef TOOL_VERSION_ghc

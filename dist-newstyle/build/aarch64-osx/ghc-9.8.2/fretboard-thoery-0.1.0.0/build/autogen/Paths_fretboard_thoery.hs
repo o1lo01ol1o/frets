@@ -5,24 +5,19 @@
 #endif
 {-# OPTIONS_GHC -fno-warn-missing-import-lists #-}
 {-# OPTIONS_GHC -w #-}
+module Paths_fretboard_thoery (
+    version,
+    getBinDir, getLibDir, getDynLibDir, getDataDir, getLibexecDir,
+    getDataFileName, getSysconfDir
+  ) where
 
-module Paths_fretboard_thoery
-  ( version,
-    getBinDir,
-    getLibDir,
-    getDynLibDir,
-    getLibexecDir,
-    getDataFileName,
-    getDataDir,
-    getSysconfDir,
-  )
-where
 
 import qualified Control.Exception as Exception
 import qualified Data.List as List
-import Data.Version (Version (..))
+import Data.Version (Version(..))
 import System.Environment (getEnv)
 import Prelude
+
 
 #if defined(VERSION_base)
 
@@ -38,56 +33,42 @@ catchIO :: IO a -> (Exception.IOException -> IO a) -> IO a
 catchIO = Exception.catch
 
 version :: Version
-version = Version [0, 1, 0, 0] []
+version = Version [0,1,0,0] []
 
 getDataFileName :: FilePath -> IO FilePath
 getDataFileName name = do
   dir <- getDataDir
   return (dir `joinFileName` name)
 
-bindir :: FilePath
-bindir = "/Users/timpierson/.cabal/bin"
+getBinDir, getLibDir, getDynLibDir, getDataDir, getLibexecDir, getSysconfDir :: IO FilePath
 
-getBinDir :: IO FilePath
-getBinDir = catchIO (getEnv "fretboard_thoery_bindir") (\_ -> return bindir)
 
-libdir :: FilePath
-libdir = "/Users/timpierson/.cabal/lib/aarch64-osx-ghc-9.8.2/fretboard-thoery-0.1.0.0-inplace"
 
-getLibDir :: IO FilePath
-getLibDir = catchIO (getEnv "fretboard_thoery_libdir") (\_ -> return libdir)
 
-dynlibdir :: FilePath
-dynlibdir = "/Users/timpierson/.cabal/lib/aarch64-osx-ghc-9.8.2"
-
-getDynLibDir :: IO FilePath
-getDynLibDir = catchIO (getEnv "fretboard_thoery_dynlibdir") (\_ -> return dynlibdir)
-
-datadir :: FilePath
-datadir = "/Users/timpierson/.cabal/share/aarch64-osx-ghc-9.8.2/fretboard-thoery-0.1.0.0"
-
-getDataDir :: IO FilePath
-getDataDir = catchIO (getEnv "fretboard_thoery_datadir") (\_ -> return datadir)
-
-libexecdir :: FilePath
-libexecdir = "/Users/timpierson/.cabal/libexec/aarch64-osx-ghc-9.8.2/fretboard-thoery-0.1.0.0"
-
-getLibexecDir :: IO FilePath
-getLibexecDir = catchIO (getEnv "fretboard_thoery_libexecdir") (\_ -> return libexecdir)
-
-sysconfdir :: FilePath
+bindir, libdir, dynlibdir, datadir, libexecdir, sysconfdir :: FilePath
+bindir     = "/Users/timpierson/.cabal/bin"
+libdir     = "/Users/timpierson/.cabal/lib/aarch64-osx-ghc-9.8.2-db02/fretboard-thoery-0.1.0.0-inplace"
+dynlibdir  = "/Users/timpierson/.cabal/lib/aarch64-osx-ghc-9.8.2-db02"
+datadir    = "/Users/timpierson/.cabal/share/aarch64-osx-ghc-9.8.2-db02/fretboard-thoery-0.1.0.0"
+libexecdir = "/Users/timpierson/.cabal/libexec/aarch64-osx-ghc-9.8.2-db02/fretboard-thoery-0.1.0.0"
 sysconfdir = "/Users/timpierson/.cabal/etc"
 
-getSysconfDir :: IO FilePath
+getBinDir     = catchIO (getEnv "fretboard_thoery_bindir")     (\_ -> return bindir)
+getLibDir     = catchIO (getEnv "fretboard_thoery_libdir")     (\_ -> return libdir)
+getDynLibDir  = catchIO (getEnv "fretboard_thoery_dynlibdir")  (\_ -> return dynlibdir)
+getDataDir    = catchIO (getEnv "fretboard_thoery_datadir")    (\_ -> return datadir)
+getLibexecDir = catchIO (getEnv "fretboard_thoery_libexecdir") (\_ -> return libexecdir)
 getSysconfDir = catchIO (getEnv "fretboard_thoery_sysconfdir") (\_ -> return sysconfdir)
 
+
+
 joinFileName :: String -> String -> FilePath
-joinFileName "" fname = fname
+joinFileName ""  fname = fname
 joinFileName "." fname = fname
-joinFileName dir "" = dir
+joinFileName dir ""    = dir
 joinFileName dir fname
   | isPathSeparator (List.last dir) = dir ++ fname
-  | otherwise = dir ++ pathSeparator : fname
+  | otherwise                       = dir ++ pathSeparator : fname
 
 pathSeparator :: Char
 pathSeparator = '/'

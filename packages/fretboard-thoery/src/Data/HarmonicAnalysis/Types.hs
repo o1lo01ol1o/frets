@@ -124,6 +124,7 @@ newtype HarmonicPath = HarmonicPath
   { getPath :: [RMPoint]
   }
   deriving (Eq, Show, Generic)
+  deriving anyclass (NFData)
 
 -- | Result of harmonic analysis that may contain multiple equally weighted candidates
 data HarmonicAnalysisResult = HarmonicAnalysisResult
@@ -135,6 +136,7 @@ data HarmonicAnalysisResult = HarmonicAnalysisResult
     hasTies :: Bool
   }
   deriving (Eq, Show, Generic)
+  deriving anyclass (NFData)
 
 -- | Functional annotation encompassing modal context, diatonic function,
 -- and (when available) a Roman numeral realisation.

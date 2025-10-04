@@ -13,6 +13,7 @@ module Data.HarmonicAnalysis.Tension
     -- * Tension Table Construction
     makeDefaultTensionTable,
     makeTSDTensionTable,
+    makeMajorMinorDiatonicTensionTable,
     makeDiatonicTensionTable,
     makeMajorMinorTensionTable,
   )
@@ -112,6 +113,16 @@ makeTSDTensionTable =
     { tonalTension = tonalityTensionDefault,
       modalTension = modeTensionMajorMinor,
       functionalTension = functionTensionRiemann
+    }
+
+-- | Create a tension table for Major/Minor analysis with full diatonic functions.
+-- Uses the two-mode major/minor table with the seven-function diatonic tensions.
+makeMajorMinorDiatonicTensionTable :: TensionTable
+makeMajorMinorDiatonicTensionTable =
+  TensionTable
+    { tonalTension = tonalityTensionDefault,
+      modalTension = modeTensionMajorMinor,
+      functionalTension = functionTensionDiatonic
     }
 
 -- | Create a tension table for full diatonic analysis.

@@ -10,6 +10,7 @@ module Data.HarmonicAnalysis.ChainOfThirds
 where
 
 import Data.HarmonicAnalysis.Types
+import Data.List (nub)
 import Data.Mod (Mod, unMod)
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -18,64 +19,156 @@ import qualified Data.Set as Set
 -- These represent common chord structures in root position
 chainRepository :: [ChainOfThirds]
 chainRepository =
-  map
-    (ChainOfThirds . Set.fromList . map fromIntegral)
-    [ -- Intervals
-      [0, 3], -- minor third
-      [0, 4], -- major third
-      -- Triads
-      [0, 3, 6], -- diminished
-      [0, 3, 7], -- minor
-      [0, 4, 7], -- major
-      [0, 4, 8], -- augmented
-      -- Triad inversions and wide voicings
-      [0, 4, 9], -- major triad with fifth up an octave
-      [0, 5, 9], -- major triad first inversion wide voicing
-      [0, 3, 9], -- minor triad with fifth up an octave
-      [0, 5, 8], -- minor triad first inversion wide voicing
-      -- Seventh chords
-      [0, 3, 6, 9], -- fully diminished seventh
-      [0, 3, 6, 10], -- half diminished seventh
-      [0, 3, 7, 10], -- minor seventh
-      [0, 4, 7, 10], -- dominant seventh
-      [0, 4, 7, 11], -- major seventh
-      -- Extended chords
-      [0, 3, 7, 10, 14], -- minor ninth
-      [0, 4, 7, 10, 14], -- dominant ninth
-      [0, 4, 7, 11, 14] -- major ninth
-    ]
+  map (ChainOfThirds . Set.fromList . map fromIntegral) rawChains
+  where
+    rawChains :: [[Int]]
+    rawChains =
+      [ [0, 3]
+      , [0, 4]
+      , [0, 3, 6]
+      , [0, 3, 7]
+      , [0, 4, 7]
+      , [0, 4, 8]
+      , [0, 3, 6, 9]
+      , [0, 3, 6, 10]
+      , [0, 3, 7, 10]
+      , [0, 3, 7, 11]
+      , [0, 4, 7, 10]
+      , [0, 4, 7, 11]
+      , [0, 4, 8, 11]
+      , [0, 3, 6, 9, 1]
+      , [0, 3, 6, 10, 1]
+      , [0, 3, 6, 10, 2]
+      , [0, 3, 7, 10, 1]
+      , [0, 3, 7, 10, 2]
+      , [0, 3, 7, 11, 2]
+      , [0, 4, 7, 10, 1]
+      , [0, 4, 7, 10, 2]
+      , [0, 4, 7, 11, 2]
+      , [0, 4, 7, 11, 3]
+      , [0, 4, 8, 11, 2]
+      , [0, 4, 8, 11, 3]
+      , [0, 3, 6, 9, 1, 4]
+      , [0, 3, 6, 9, 1, 5]
+      , [0, 3, 6, 10, 1, 4]
+      , [0, 3, 6, 10, 1, 5]
+      , [0, 3, 6, 10, 2, 5]
+      , [0, 3, 7, 10, 1, 4]
+      , [0, 3, 7, 10, 1, 5]
+      , [0, 3, 7, 10, 2, 5]
+      , [0, 3, 7, 10, 2, 6]
+      , [0, 3, 7, 11, 2, 5]
+      , [0, 3, 7, 11, 2, 6]
+      , [0, 4, 7, 10, 1, 5]
+      , [0, 4, 7, 10, 2, 5]
+      , [0, 4, 7, 10, 2, 6]
+      , [0, 4, 7, 11, 2, 5]
+      , [0, 4, 7, 11, 2, 6]
+      , [0, 4, 7, 11, 3, 6]
+      , [0, 4, 8, 11, 2, 5]
+      , [0, 4, 8, 11, 2, 6]
+      , [0, 4, 8, 11, 3, 6]
+      , [0, 4, 8, 11, 3, 7]
+      , [0, 3, 6, 9, 1, 4, 7]
+      , [0, 3, 6, 9, 1, 4, 8]
+      , [0, 3, 6, 9, 1, 5, 8]
+      , [0, 3, 6, 10, 1, 4, 7]
+      , [0, 3, 6, 10, 1, 4, 8]
+      , [0, 3, 6, 10, 1, 5, 8]
+      , [0, 3, 6, 10, 1, 5, 9]
+      , [0, 3, 6, 10, 2, 5, 8]
+      , [0, 3, 6, 10, 2, 5, 9]
+      , [0, 3, 7, 10, 1, 4, 8]
+      , [0, 3, 7, 10, 1, 5, 8]
+      , [0, 3, 7, 10, 1, 5, 9]
+      , [0, 3, 7, 10, 2, 5, 8]
+      , [0, 3, 7, 10, 2, 5, 9]
+      , [0, 3, 7, 10, 2, 6, 9]
+      , [0, 3, 7, 11, 2, 5, 8]
+      , [0, 3, 7, 11, 2, 5, 9]
+      , [0, 3, 7, 11, 2, 6, 9]
+      , [0, 3, 7, 11, 2, 6, 10]
+      , [0, 4, 7, 10, 1, 5, 8]
+      , [0, 4, 7, 10, 1, 5, 9]
+      , [0, 4, 7, 10, 2, 5, 8]
+      , [0, 4, 7, 10, 2, 5, 9]
+      , [0, 4, 7, 10, 2, 6, 9]
+      , [0, 4, 7, 11, 2, 5, 8]
+      , [0, 4, 7, 11, 2, 5, 9]
+      , [0, 4, 7, 11, 2, 6, 9]
+      , [0, 4, 7, 11, 2, 6, 10]
+      , [0, 4, 7, 11, 3, 6, 9]
+      , [0, 4, 7, 11, 3, 6, 10]
+      , [0, 4, 8, 11, 2, 5, 9]
+      , [0, 4, 8, 11, 2, 6, 9]
+      , [0, 4, 8, 11, 2, 6, 10]
+      , [0, 4, 8, 11, 3, 6, 9]
+      , [0, 4, 8, 11, 3, 6, 10]
+      , [0, 4, 8, 11, 3, 7, 10]
+      , [0, 3, 6, 9, 1, 4, 7, 10]
+      , [0, 3, 6, 9, 1, 4, 7, 11]
+      , [0, 3, 6, 9, 1, 4, 8, 11]
+      , [0, 3, 6, 9, 1, 5, 8, 11]
+      , [0, 3, 6, 10, 1, 4, 7, 11]
+      , [0, 3, 6, 10, 1, 4, 8, 11]
+      , [0, 3, 6, 10, 1, 5, 8, 11]
+      , [0, 3, 6, 10, 2, 5, 8, 11]
+      , [0, 3, 6, 10, 2, 5, 9, 11]
+      ]
 
 -- | Find all possible chains of thirds that could represent a pitch set
 -- Tests each pitch in the set as a potential root to find all matching patterns
 findChainsOfThirds :: Set (Mod 12) -> [ChainOfThirds]
-findChainsOfThirds pitchSet =
-  let -- Test each pitch as a potential root
-      pitchList = Set.toList pitchSet
-      allMatches = concatMap (findMatchesWithRoot pitchSet) pitchList
-
-      -- Filter to minimal chains (remove chains that are proper subsets of others)
-      minimalChains = filter (isMinimalChain allMatches) allMatches
-   in minimalChains
+findChainsOfThirds pitchSet
+  | null roots = []
+  | otherwise =
+      case equalityMatches of
+        [] -> minimalSupersets
+        matches -> matches
   where
-    isMinimalChain allChains candidate =
-      not $ any (isProperSubsetChain candidate) allChains
+    roots = Set.toList pitchSet
+    chordInts = Set.map (fromIntegral . unMod) pitchSet
+    chordSize = Set.size chordInts
 
-    isProperSubsetChain (ChainOfThirds a) (ChainOfThirds b) =
-      a `Set.isProperSubsetOf` b
+    normalizeBy root = Set.map (\p -> (p - root) `mod` 12)
 
--- | Find all matching chain patterns with a specific root
-findMatchesWithRoot :: Set (Mod 12) -> Mod 12 -> [ChainOfThirds]
-findMatchesWithRoot pitchSet root =
-  let -- Normalize the pitch set so the root becomes 0
-      normalizedPitchSet = transposeChainToRoot root (ChainOfThirds pitchSet)
+    chainToIntSet (ChainOfThirds s) = Set.map (\m -> fromIntegral (unMod m) `mod` 12) s
 
-      -- Find chains from repository that are subsets of the normalized pitch set
-      matchingChains = filter (isSubsetOfChain normalizedPitchSet) chainRepository
+    equalityMatches =
+      let go [] = []
+          go (chain : rest)
+            | Set.size (chainToIntSet chain) /= chordSize = go rest
+            | otherwise =
+                let matches =
+                      [ transposeChain rootInt chain
+                        | r <- roots
+                        , let rootInt = fromIntegral (unMod r)
+                        , normalizeBy rootInt chordInts == chainToIntSet chain
+                      ]
+                 in if null matches then go rest else nub matches
+       in go chainRepository
 
-      -- Transpose matches back to original pitch level
-      originalTransposition = fromIntegral (unMod root)
-      transposedMatches = map (transposeChain originalTransposition) matchingChains
-   in transposedMatches
+    minimalSupersets =
+      let go [] _ acc = acc
+          go (chain : rest) currentMin acc =
+            let chainSize = Set.size (chainToIntSet chain)
+                continue =
+                  case currentMin of
+                    Just minSize | chainSize > minSize -> False
+                    _ -> True
+             in if not continue
+                  then acc
+                  else
+                    let matches =
+                          [ transposeChain rootInt chain
+                            | r <- roots
+                            , let rootInt = fromIntegral (unMod r)
+                            , normalizeBy rootInt chordInts `Set.isSubsetOf` chainToIntSet chain
+                          ]
+                        newAcc = if null matches then acc else acc ++ matches
+                        newMin = if null matches then currentMin else Just chainSize
+                     in go rest newMin newAcc
+       in nub $ go chainRepository Nothing []
 
 -- | Transpose a chain of thirds by a given interval (in semitones)
 transposeChain :: Int -> ChainOfThirds -> ChainOfThirds

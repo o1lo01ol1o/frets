@@ -47,10 +47,10 @@ getBinDir, getLibDir, getDynLibDir, getDataDir, getLibexecDir, getSysconfDir :: 
 
 bindir, libdir, dynlibdir, datadir, libexecdir, sysconfdir :: FilePath
 bindir     = "/Users/timpierson/.cabal/bin"
-libdir     = "/Users/timpierson/.cabal/lib/aarch64-osx-ghc-9.8.2-db02/fretboard-thoery-0.1.0.0-inplace"
-dynlibdir  = "/Users/timpierson/.cabal/lib/aarch64-osx-ghc-9.8.2-db02"
-datadir    = "/Users/timpierson/.cabal/share/aarch64-osx-ghc-9.8.2-db02/fretboard-thoery-0.1.0.0"
-libexecdir = "/Users/timpierson/.cabal/libexec/aarch64-osx-ghc-9.8.2-db02/fretboard-thoery-0.1.0.0"
+libdir     = "/Users/timpierson/.cabal/lib/aarch64-osx-ghc-9.8.2/fretboard-thoery-0.1.0.0-inplace"
+dynlibdir  = "/Users/timpierson/.cabal/lib/aarch64-osx-ghc-9.8.2"
+datadir    = "/Users/timpierson/.cabal/share/aarch64-osx-ghc-9.8.2/fretboard-thoery-0.1.0.0"
+libexecdir = "/Users/timpierson/.cabal/libexec/aarch64-osx-ghc-9.8.2/fretboard-thoery-0.1.0.0"
 sysconfdir = "/Users/timpierson/.cabal/etc"
 
 getBinDir     = catchIO (getEnv "fretboard_thoery_bindir")     (\_ -> return bindir)

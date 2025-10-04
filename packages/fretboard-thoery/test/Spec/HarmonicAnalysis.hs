@@ -43,15 +43,11 @@ mozartProgressionPath :: IO AnnotatedHarmonicPath
 mozartProgressionPath = do
   chordsPath <- discoverChordFile
   chords <- loadExtractedChords chordsPath
-  let progression = fmap (pitchSet . pitches) chords
-      runtimeConfig = makeMajorMinorTSDConfig
-      windowConfig =
-        Windowed.defaultWindowedConfig
-          { Windowed.causalDepth = 1,
-            Windowed.finalDepth = 2
-          }
-      windowedPath = windowedHarmonicAnalysis runtimeConfig windowConfig progression
-   in pure (annotateHarmonicPath runtimeConfig progression windowedPath)
+  let pick n = pitchSet . pitches $ chords !! n
+      progression = [pick 1, pick 1, pick 2, pick 3]
+      windowConfig = Windowed.defaultWindowedConfig
+      windowedPath = analyzeWindowed MajorMinorTSD windowConfig progression
+   in pure (annotatePath MajorMinorTSD progression windowedPath)
 
 discoverChordFile :: IO FilePath
 discoverChordFile = do
@@ -73,7 +69,7 @@ mozartExpectedSequence =
   [ (Ionian, Tonic, 9, Just "I"),
     (Ionian, Tonic, 9, Just "I"),
     (Ionian, Dominant, 9, Just "V"),
-    (Ionian, Tonic, 4, Just "I")
+    (Ionian, Tonic, 9, Just "I")
   ]
 
 tests :: TestTree

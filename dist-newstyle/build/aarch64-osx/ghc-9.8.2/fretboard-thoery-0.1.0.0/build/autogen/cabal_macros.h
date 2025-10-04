@@ -321,15 +321,15 @@
   (major1) == 0 && (major2) == 2 && (minor) <= 2)
 #endif /* MIN_VERSION_vector_th_unbox */
 
-/* tool gcc-19.1.7 */
+/* tool gcc-15.0.0 */
 #ifndef TOOL_VERSION_gcc
-#define TOOL_VERSION_gcc "19.1.7"
+#define TOOL_VERSION_gcc "15.0.0"
 #endif /* TOOL_VERSION_gcc */
 #ifndef MIN_TOOL_VERSION_gcc
 #define MIN_TOOL_VERSION_gcc(major1,major2,minor) (\
-  (major1) <  19 || \
-  (major1) == 19 && (major2) <  1 || \
-  (major1) == 19 && (major2) == 1 && (minor) <= 7)
+  (major1) <  15 || \
+  (major1) == 15 && (major2) <  0 || \
+  (major1) == 15 && (major2) == 0 && (minor) <= 0)
 #endif /* MIN_TOOL_VERSION_gcc */
 /* tool ghc-9.8.2 */
 #ifndef TOOL_VERSION_ghc
@@ -381,15 +381,15 @@
   (major1) == 0 && (major2) <  68 || \
   (major1) == 0 && (major2) == 68 && (minor) <= 10)
 #endif /* MIN_TOOL_VERSION_hsc2hs */
-/* tool pkg-config-0.29.2 */
+/* tool pkg-config-2.5.1 */
 #ifndef TOOL_VERSION_pkg_config
-#define TOOL_VERSION_pkg_config "0.29.2"
+#define TOOL_VERSION_pkg_config "2.5.1"
 #endif /* TOOL_VERSION_pkg_config */
 #ifndef MIN_TOOL_VERSION_pkg_config
 #define MIN_TOOL_VERSION_pkg_config(major1,major2,minor) (\
-  (major1) <  0 || \
-  (major1) == 0 && (major2) <  29 || \
-  (major1) == 0 && (major2) == 29 && (minor) <= 2)
+  (major1) <  2 || \
+  (major1) == 2 && (major2) <  5 || \
+  (major1) == 2 && (major2) == 5 && (minor) <= 1)
 #endif /* MIN_TOOL_VERSION_pkg_config */
 /* tool runghc-9.8.2 */
 #ifndef TOOL_VERSION_runghc

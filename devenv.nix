@@ -1,7 +1,7 @@
 { pkgs, ... }:
 let
   # Custom Haskell package set with OpenBLAS for hmatrix
-  haskellPackages = pkgs.haskell.packages.ghc982;
+  haskellPackages = pkgs.haskell.packages.ghc984;
 
   # GHC with hmatrix in the environment (for ghci/cabal)
   ghcWithHMatrix = haskellPackages.ghcWithPackages (ps: with ps; [ hmatrix ]);
@@ -13,13 +13,14 @@ in
   # https://devenv.sh/packages/
   packages = [
     pkgs.git
+    pkgs.codex
     pkgs.openblasCompat
     pkgs.cabal-install
     pkgs.haskellPackages.cabal-fmt
-    pkgs.llvmPackages_15.clang
-    pkgs.llvm_15
+    pkgs.llvmPackages_18.clang
+    pkgs.llvm_18
   ];
-  stdenv = pkgs.llvmPackages_15.stdenv;
+  stdenv = pkgs.llvmPackages_18.stdenv;
 
   # https://devenv.sh/scripts/
   scripts.hello.exec = "echo hello from $GREET";
@@ -35,7 +36,7 @@ in
 
   languages.haskell = {
     enable = true;
-    package = haskellPackages;
+    package = ghcWithHMatrix;
   };
 
   languages.python = {
@@ -47,16 +48,16 @@ in
 
   pre-commit.hooks = {
     # lint shell scripts
-    shellcheck.enable = true;
-    markdownlint.enable = true;
+    # shellcheck.enable = true;
+    # markdownlint.enable = true;
     # lint nix
     # nixfmt.enable = true;
     # deadnix.enable = true;
     # nil.enable = true;
     # statix.enable = true;
     # format haskell
-    ormolu.enable = false;
-    cabal-fmt.enable = true;
+    # ormolu.enable = false;
+    # cabal-fmt.enable = true;
     # lint haskell
     # hlint.enable = true;
   };

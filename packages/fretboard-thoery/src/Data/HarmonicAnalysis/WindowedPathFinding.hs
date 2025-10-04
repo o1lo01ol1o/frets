@@ -14,15 +14,22 @@ module Data.HarmonicAnalysis.WindowedPathFinding
   )
 where
 
-import Data.Array (Array, listArray, (!))
 import Data.HarmonicAnalysis.RiemannMatrix (getValue)
-import Data.HarmonicAnalysis.Tension
+import qualified Data.HarmonicAnalysis.Tension as Tension
 import Data.HarmonicAnalysis.Types
-import Data.List (maximumBy)
+import Data.List (foldl, maximumBy, sortOn)
 import Data.Maybe (fromMaybe)
-import Data.Mod (unMod)
+import Data.Mod (Mod, unMod)
 import Data.Ord (comparing)
 import qualified Data.Vector as V
+import Debug.Trace (trace)
+
+-- | Context required to evaluate transition penalties
+data TransitionContext = TransitionContext
+  { tcTensionTable :: TensionTable,
+    tcNumFunctions :: Int,
+    tcNumTonalities :: Int
+  }
 
 -- | Configuration for windowed path finding
 data WindowedConfig = WindowedConfig
@@ -35,7 +42,9 @@ data WindowedConfig = WindowedConfig
     -- | Local threshold percentage (0-100)
     localThreshold :: Int,
     -- | Tension table for transitions
-    windowTensionTable :: TensionTable
+    windowTensionTable :: TensionTable,
+    -- | Optional inclusion mask (row × column) restricting the search space
+    windowInclusion :: Maybe (V.Vector (V.Vector Bool))
   }
   deriving (Eq, Show)
 
@@ -47,21 +56,15 @@ defaultWindowedConfig =
       finalDepth = 3,
       globalThreshold = 8,
       localThreshold = 8,
-      windowTensionTable = defaultTensionTable
+      windowTensionTable = Tension.makeDefaultTensionTable,
+      windowInclusion = Nothing
     }
 
 -- | Find optimal path using windowed approach (legacy version)
 windowedPath :: [RiemannMatrix] -> WindowedConfig -> HarmonicPath
 windowedPath [] _ = HarmonicPath []
 windowedPath matrices config =
-  let tensions = windowTensionTable config
-      numMatrices = length matrices
-      firstMatrix = head matrices
-      numRows = rowCount firstMatrix
-      numCols = colCount firstMatrix
-
-      -- Process each position with a sliding window
-      points = processWindows matrices config 0 []
+  let points = processWindows matrices config 0 []
    in HarmonicPath points
 
 -- | Find optimal path using runtime configuration and windowed approach
@@ -102,102 +105,192 @@ processWindows matrices config currentPos accPoints
 findMaxWeightInWindow :: [RiemannMatrix] -> WindowedConfig -> Int -> [RMPoint]
 findMaxWeightInWindow [] _ _ = []
 findMaxWeightInWindow matrices config startIndex =
-  let windowSize = length matrices
-      firstMatrix = head matrices
-      numRows = rowCount firstMatrix
-      numCols = colCount firstMatrix
-
-      -- Apply threshold filtering as in the Java implementation
-      filteredMatrices =
+  let filteredMatrices =
         applyLocalThreshold (localThreshold config) $
           applyGlobalThreshold (globalThreshold config) matrices
+   in case filteredMatrices of
+        [] -> []
+        (firstMatrix : _) ->
+          let tensions = windowTensionTable config
+              context = makeTransitionContext tensions firstMatrix
+              totalCols = colCount firstMatrix
+              totalRows = rowCount firstMatrix
+              inclusionMask = windowInclusion config
 
-      -- Generate all possible paths through the filtered window
-      allPaths = generateAllWindowPaths filteredMatrices startIndex
+              negInf = negate (1 / 0)
 
-      -- Calculate weight for each path
-      pathWeights = map (calculatePathWeight filteredMatrices config) allPaths
+              allPoints =
+                [ [ RMPoint
+                      { matrixIndex = startIndex + offset,
+                        row = Row r,
+                        col = Col (fromIntegral c),
+                        value =
+                          fromMaybe negInf $ getValue matrix (Row r) (Col (fromIntegral c))
+                      }
+                  | r <- [0 .. totalRows - 1],
+                    c <- [0 .. totalCols - 1],
+                    cellIncluded inclusionMask r c
+                  ]
+                | (offset, matrix) <- zip [0 ..] filteredMatrices
+                ]
 
-      -- Find path with maximum weight
-      bestPathIndex = findMaxIndex pathWeights
-   in if null allPaths then [] else allPaths !! bestPathIndex
-
--- | Generate all possible paths through a window of matrices
-generateAllWindowPaths :: [RiemannMatrix] -> Int -> [[RMPoint]]
-generateAllWindowPaths [] _ = []
-generateAllWindowPaths matrices startIndex =
-  let windowSize = length matrices
-      firstMatrix = head matrices
-      numRows = rowCount firstMatrix
-      numCols = colCount firstMatrix
-
-      -- All possible points for each matrix
-      allPoints =
-        [ [ RMPoint
-              { matrixIndex = startIndex + i,
-                row = Row r,
-                col = Col (fromIntegral c),
-                value = fromMaybe 0.0 $ getValue matrix (Row r) (Col (fromIntegral c))
-              }
-            | r <- [0 .. numRows - 1],
-              c <- [0 .. numCols - 1]
-          ]
-          | (i, matrix) <- zip [0 ..] matrices
-        ]
-   in cartesianProduct allPoints
+              allPaths = cartesianProduct allPoints
+              weightedPaths =
+                [ let weight = calculatePathWeight context path
+                   in (path, weight)
+                  | path <- allPaths
+                ]
+              sortedPaths = reverse (sortOn snd weightedPaths)
+              _ =
+                if startIndex == 0
+                  then
+                    trace
+                      ("Window 0 candidate weights: "
+                        ++ show
+                          ( take 10
+                              [ ( [ (unRow (row p), unMod (unCol (col p)), value p)
+                                  | p <- path
+                                  ], weight)
+                                | (path, weight) <- sortedPaths
+                              ]
+                          )
+                      )
+                      ()
+                  else ()
+              chooseBest Nothing candidate = Just candidate
+              chooseBest best@(Just (_, bestWeight)) candidate@(_, candWeight)
+                | candWeight > bestWeight = Just candidate
+                | otherwise = best
+              bestCandidate = foldl chooseBest Nothing weightedPaths
+              bestPathResult =
+                case bestCandidate of
+                  Just (bestPath, bestWeight) ->
+                    let _ =
+                          if startIndex == 0
+                            then
+                              trace
+                                ( "Window 0 best path: "
+                                    ++ show
+                                      [ ( unRow (row p),
+                                          unMod (unCol (col p)),
+                                          value p
+                                        )
+                                      | p <- bestPath
+                                      ]
+                                    ++ ", weight="
+                                    ++ show bestWeight
+                                )
+                                ()
+                            else ()
+                     in bestPath
+                  Nothing -> []
+            in bestPathResult
 
 -- | Calculate total weight of a path through matrices
-calculatePathWeight :: [RiemannMatrix] -> WindowedConfig -> [RMPoint] -> Double
-calculatePathWeight matrices config path =
+calculatePathWeight :: TransitionContext -> [RMPoint] -> Double
+calculatePathWeight _ [] = 0
+calculatePathWeight context path =
   let matrixWeights = sum $ map value path
-      transitionWeights = sum $ zipWith (calculateTransition config) path (tail path)
+      transitionWeights = sum $ zipWith (calculateTransition context) path (drop 1 path)
    in matrixWeights + transitionWeights
 
+-- | Priority for breaking ties between equally weighted paths.
+-- | Cartesian product helper (preserves order like Java).
+cartesianProduct :: [[a]] -> [[a]]
+cartesianProduct [] = [[]]
+cartesianProduct (xs : xss) = [x : ys | x <- xs, ys <- cartesianProduct xss]
+
+-- | Check whether a matrix cell is allowed by the inclusion mask.
+cellIncluded :: Maybe (V.Vector (V.Vector Bool)) -> Int -> Int -> Bool
+cellIncluded Nothing _ _ = True
+cellIncluded (Just mask) r c =
+  case mask V.!? r >>= (\rowVec -> rowVec V.!? c) of
+    Just allowed -> allowed
+    Nothing -> False
+
 -- | Calculate transition weight between two adjacent points
-calculateTransition :: WindowedConfig -> RMPoint -> RMPoint -> Double
-calculateTransition config point1 point2 =
-  let tensions = windowTensionTable config
+calculateTransition :: TransitionContext -> RMPoint -> RMPoint -> Double
+calculateTransition context point1 point2 =
+  let tensions = tcTensionTable context
+      numFunctions = tcNumFunctions context
+      numTonalities = tcNumTonalities context
       r1 = unRow $ row point1
       c1 = fromIntegral $ unMod $ unCol $ col point1
       r2 = unRow $ row point2
       c2 = fromIntegral $ unMod $ unCol $ col point2
 
-      -- Calculate tonal, modal, and functional distances
-      tonalDistance = calculateTonalDistance tensions c1 c2
-      modalDistance = calculateModalDistance tensions r1 r2
-      functionalDistance = calculateFunctionalDistance tensions r1 r2
+      tonalDiff = positiveMod (c2 - c1) numTonalities
+      tonalityDistance = findTonalDistance numTonalities (tonalTension tensions) tonalDiff
 
-      totalDistance = tonalDistance + modalDistance + functionalDistance
-   in exp (-abs totalDistance) -- Negative exponential as mentioned in Java comments
+      safeNumFunctions = max 1 numFunctions
+      sourceMode = r1 `div` safeNumFunctions
+      targetMode = r2 `div` safeNumFunctions
+      modeTensionVal = Tension.lookupTension (modalTension tensions) sourceMode targetMode
+      modalDistance = squareWithSign modeTensionVal
 
--- | Calculate tonal distance using tension table
-calculateTonalDistance :: TensionTable -> Int -> Int -> Double
-calculateTonalDistance tensions c1 c2 =
-  let tDiff = (c2 - c1 + 12) `mod` 12
-      tonalTensions = tonalTension tensions
-   in if not (V.null tonalTensions) && not (V.null (V.head tonalTensions))
-        then (V.head tonalTensions) V.! (tDiff `mod` V.length (V.head tonalTensions))
-        else 0.0
+      sourceFunction = r1 `mod` safeNumFunctions
+      targetFunction = r2 `mod` safeNumFunctions
+      funcTensionVal = Tension.lookupTension (functionalTension tensions) sourceFunction targetFunction
+      functionalDistance = squareWithSign funcTensionVal
 
--- | Calculate modal distance using tension table
-calculateModalDistance :: TensionTable -> Int -> Int -> Double
-calculateModalDistance tensions r1 r2 =
-  let mode1 = r1 `div` 3 -- T-S-D functions
-      mode2 = r2 `div` 3
-      modalTensions = modalTension tensions
-   in if not (V.null modalTensions) && V.length modalTensions > mode1 && V.length (modalTensions V.! mode1) > mode2
-        then (modalTensions V.! mode1) V.! mode2
-        else 0.0
+      totalDistance = tonalityDistance + modalDistance + functionalDistance
+   in exp (negate $ abs totalDistance)
 
--- | Calculate functional distance using tension table
-calculateFunctionalDistance :: TensionTable -> Int -> Int -> Double
-calculateFunctionalDistance tensions r1 r2 =
-  let func1 = r1 `mod` 3 -- T-S-D functions
-      func2 = r2 `mod` 3
-      funcTensions = functionalTension tensions
-   in if not (V.null funcTensions) && V.length funcTensions > func1 && V.length (funcTensions V.! func1) > func2
-        then (funcTensions V.! func1) V.! func2
-        else 0.0
+-- | Construct transition context from tension table and matrix dimensions
+makeTransitionContext :: TensionTable -> RiemannMatrix -> TransitionContext
+makeTransitionContext tensions matrix =
+  let inferredFunctions =
+        let ft = functionalTension tensions
+         in if V.null ft
+              then max 1 (rowCount matrix)
+              else V.length ft
+      inferredTonalities = colCount matrix
+    in TransitionContext tensions inferredFunctions inferredTonalities
+
+-- | Convert a tension value into a squared distance while preserving sign
+squareWithSign :: Double -> Double
+squareWithSign val =
+  let sq = val * val
+   in if val < 0 then negate sq else sq
+
+-- | Tonal distance lookup mirroring the Java reference implementation
+findTonalDistance :: Int -> V.Vector (V.Vector Double) -> Int -> Double
+findTonalDistance numTonalities tonalTensions tonalDiff
+  | V.null tonalTensions = 0
+  | otherwise =
+      let tryCircle rowIndex circleStep
+            | rowIndex >= V.length tonalTensions = Nothing
+            | otherwise =
+                let rowVec = tonalTensions V.! rowIndex
+                    rowLen = V.length rowVec
+                    rowLenSafe = max 1 rowLen
+                    limit = max 1 numTonalities
+                    findInRow colIndex currentDiff
+                      | colIndex >= limit = Nothing
+                      | currentDiff == tonalDiff = rowVec V.!? (colIndex `mod` rowLenSafe)
+                      | otherwise =
+                          let nextDiff = positiveMod (currentDiff + circleStep) limit
+                           in findInRow (colIndex + 1) nextDiff
+                 in do
+                      guardValue <- findInRow 0 0
+                      pure guardValue
+
+          result =
+            case tryCircle 0 7 of
+              Just val -> val
+              Nothing ->
+                case tryCircle 1 5 of
+                  Just val -> val
+                  Nothing -> 0
+
+       in squareWithSign result
+
+-- | Positive modulus helper replicating the Java logic
+positiveMod :: Int -> Int -> Int
+positiveMod i n =
+  let modulus = if n <= 0 then 1 else n
+      r = i `mod` modulus
+   in if r < 0 then r + modulus else r
 
 -- | Apply threshold filtering to a matrix (sets values below threshold to negative infinity)
 filterMatrix :: Double -> RiemannMatrix -> RiemannMatrix
@@ -253,25 +346,11 @@ updateMatrix originalMatrix updates =
                   newRow = case maybeVal of
                     Just val -> currentRow V.// [(fromIntegral (unMod c), Just val)]
                     Nothing -> currentRow V.// [(fromIntegral (unMod c), Nothing)]
-               in m V.// [(r, newRow)]
+             in m V.// [(r, newRow)]
           )
           matrixData
           updates
    in originalMatrix {matrix = updatedMatrix}
-
--- | Cartesian product of lists of lists
-cartesianProduct :: [[a]] -> [[a]]
-cartesianProduct [] = [[]]
-cartesianProduct (xs : xss) = [x : ys | x <- xs, ys <- cartesianProduct xss]
-
--- | Find index of maximum element in list (first-encountered tie-breaking like Java)
-findMaxIndex :: [Double] -> Int
-findMaxIndex [] = 0
-findMaxIndex xs =
-  let indexed = zip [0 ..] xs
-      -- Use first-encountered tie-breaking like Java's MaximumWeightIndex()
-      (maxIdx, _) = foldl1 (\(idx1, val1) (idx2, val2) -> if val2 > val1 then (idx2, val2) else (idx1, val1)) indexed
-   in maxIdx
 
 -- | Construct a default point when window processing fails
 constructDefaultPoint :: [RiemannMatrix] -> Int -> RMPoint

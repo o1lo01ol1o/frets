@@ -24,7 +24,7 @@ library
   -- other-modules:
   -- other-extensions:
   build-depends:
-    , base              ^>=4.19.1.0
+    , base
     , bytestring
     , containers
     , diagrams-contrib
@@ -47,7 +47,7 @@ executable fretboard-diagram
   -- other-modules:
   -- other-extensions:
   build-depends:
-    , base               ^>=4.19.1.0
+    , base
     , fretboard-diagram
 
   hs-source-dirs:   app
@@ -63,5 +63,5 @@ test-suite fretboard-diagram-test
   hs-source-dirs:   test
   main-is:          Main.hs
   build-depends:
-    , base               ^>=4.19.1.0
+    , base
     , fretboard-diagram

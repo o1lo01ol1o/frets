@@ -8,7 +8,7 @@ import qualified Data.ByteString.Lazy as BL
 import Data.HarmonicAnalysis
 import Data.HarmonicAnalysis.Types
 import qualified Data.HarmonicAnalysis.WindowedPathFinding as Windowed
-import Data.Mod (Mod)
+import Data.Mod (Mod, unMod)
 import qualified Data.Set as Set
 import Numeric (showFFloat)
 
@@ -43,10 +43,12 @@ printStep step = do
       point = stepPoint step
       mode' = annotationMode harmony
       function' = annotationFunction harmony
+      keyCenter = annotationKeyCenter harmony
       tonality = fromIntegral (unMod (unCol (col point)))
   putStrLn $ concat
     [ "matrixIndex=", show (matrixIndex point)
     , ", mode=", show mode'
     , ", function=", show function'
+    , ", keyCenter=", show (fromIntegral (unMod keyCenter) :: Int)
     , ", tonality=", show tonality
     ]

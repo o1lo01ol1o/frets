@@ -29,4 +29,6 @@ devenv.local.nix
 rubato-src-20070720
 
 dist-newstyle/
+.codex/*
+!.codex/config.toml
 .DS_STORE

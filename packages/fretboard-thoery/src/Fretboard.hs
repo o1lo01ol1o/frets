@@ -42,7 +42,6 @@ module Fretboard
     cMajor7Frettings',
     cProgression,
     isValidFretting,
-    calculateDistance,
     frettingDiffersOnlyInFingering,
   )
 where
@@ -55,25 +54,18 @@ import qualified Data.Bifunctor
 import Data.Foldable (Foldable (..), minimumBy)
 import Data.Function (on)
 import Data.Functor.Rep (Representable (Rep), index)
-import Data.List (elemIndex, groupBy, nub, sort, sortBy)
+import Data.List (elemIndex, groupBy, nub, permutations, sort, sortBy)
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromJust, isJust, mapMaybe)
 import Data.Mod (Mod, unMod)
 import Data.Ord (comparing)
-import qualified Data.PQueue.Prio.Min as PQ
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Vector (Vector, generate, (!), (//))
 import qualified Data.Vector as V
-import Data.Vector.Storable (Storable)
-import qualified Data.Vector.Storable as S
-import qualified Data.Vector.Unboxed as U
 import Finger (Finger (..))
 import Finger.TH ()
-import Foreign.Ptr (Ptr)
-import Foreign.Storable (Storable (..))
 import GHC.Generics (Generic)
 import GHC.OldList (sortOn)
 import GHC.Word (Word8)
@@ -129,62 +121,73 @@ lowestFrettedNote (Fretting fretboard frets)
               frettedStrings
        in Just $ minimum chromatics
 
--- A utility function to create an "infinite" distance representation
-inf :: Word8
-inf = maxBound `div` 128 :: Word8
+data NotePosition = NotePosition
+  { npString :: !Int,
+    npFinger :: !(Maybe Finger),
+    npFret :: !Int
+  }
+  deriving (Eq, Show)
 
--- Initialize the distance vector from the adjacency matrix,
--- setting self-distances to 0 and non-existing edges to infinity
-initDist :: S.Vector (U.Vector Word8) -> S.Vector (U.Vector Word8)
-initDist =
-  S.imap
-    ( \i row ->
-        U.imap
-          ( \j val ->
-              if i == j then 0 else if val == 0 then inf else val
-          )
-          row
-    )
+data PathCost = PathCost
+  { pcTransitions :: !Int,
+    pcBase :: !Int
+  }
+  deriving (Eq, Show, Ord)
 
--- The core of the Floyd-Warshall algorithm, updating distances
-floydWarshallCore :: S.Vector (U.Vector Word8) -> Int -> S.Vector (U.Vector Word8)
-floydWarshallCore dist k = S.imap updateRow dist
+data PathEntry = PathEntry
+  { peCost :: !(Maybe PathCost),
+    pePrev :: !(Maybe Int),
+    peFretting :: !Fretting
+  }
+
+notePosition :: (Int, Maybe (Finger, Int)) -> NotePosition
+notePosition (s, mbFingerFret) =
+  case mbFingerFret of
+    Nothing -> NotePosition s Nothing 0
+    Just (finger, fret) -> NotePosition s (Just finger) fret
+
+noteDistance :: NotePosition -> NotePosition -> Int
+noteDistance (NotePosition s1 f1 fret1) (NotePosition s2 f2 fret2) =
+  abs (s1 - s2)
+    + abs (fret1 - fret2)
+    + fingerPenalty
+    + openPenalty
   where
-    updateRow i = U.imap (updateDist i)
-    updateDist i j oldDist = min oldDist (dist S.! i U.! k + dist S.! k U.! j)
-
--- Iteratively apply the core logic over all vertices
-floydWarshall :: S.Vector (U.Vector Word8) -> S.Vector (U.Vector Word8)
-floydWarshall adjMatrix =
-  foldl
-    floydWarshallCore
-    (initDist adjMatrix)
-    [0 .. S.length adjMatrix - 1]
+    fingerPenalty =
+      case (f1, f2) of
+        (Just finger1, Just finger2) ->
+          abs (fromEnum finger1 - fromEnum finger2)
+        _ -> 0
+    openPenalty =
+      case (f1, f2) of
+        (Nothing, Just _) -> 1
+        (Just _, Nothing) -> 1
+        _ -> 0
 
 frettingDistance :: Fretting -> Fretting -> Maybe Word8
 frettingDistance (Fretting fb1 frets1) (Fretting fb2 frets2)
-  | fb1 /= fb2 = Nothing -- Fretboards are different, return Nothing
-  | otherwise = Just $ sumMinDistances shortestPaths
-  where
-    toPostion = V.fromList . mapMaybe (\(s, mbf) -> (s,) <$> mbf) . Set.toList
-    !playedPositions1 = toPostion frets1
-    !playedPositions2 = toPostion frets2
-
-    n1 = V.length playedPositions1
-    n2 = V.length playedPositions2
-
-    initDist = S.generate n1 $ \i ->
-      U.generate n2 $ \j ->
-        let !(s1, (_, f1)) = playedPositions1 ! i
-            !(s2, (_, f2)) = playedPositions2 ! j
-            !f_ = if f2 <= f1 then f1 - f2 else f2 - f1
-            !s_ = if s2 <= s1 then s1 - s2 else s2 - s1
-         in fromIntegral (f_ + s_)
-
-    shortestPaths = floydWarshall initDist
-    -- Sum the minimum distances for each position in the first fretting
-    sumMinDistances :: S.Vector (U.Vector Word8) -> Word8
-    sumMinDistances = S.sum . S.map U.minimum
+  | fb1 /= fb2 = Nothing
+  | otherwise =
+      let positions1 = fmap notePosition (Set.toList frets1)
+          positions2 = fmap notePosition (Set.toList frets2)
+          len1 = length positions1
+          len2 = length positions2
+          matchCost shorter longer =
+            [ sum (zipWith noteDistance shorter perm)
+              | combo <- combinations (length shorter) longer,
+                perm <- permutations combo
+            ]
+          costOptions
+            | len1 == 0 || len2 == 0 = [0]
+            | len1 <= len2 = matchCost positions1 positions2
+            | otherwise = matchCost positions2 positions1
+       in case costOptions of
+            [] -> Nothing
+            opts ->
+              let totalCost = minimum opts
+               in if totalCost > fromIntegral (maxBound :: Word8)
+            then Nothing
+            else Just (fromIntegral totalCost)
 
 -- | Checks if a fretting is valid
 isValidFretting :: Fretting -> Bool
@@ -614,52 +617,108 @@ fingerSymbol Pinky = "4"
 -- | Optimizes frettings for a given list of sets of chromatics (chords) in a progression
 optimizeFrettings :: Int -> Fretboard -> [Set Chromatic] -> [Fretting]
 optimizeFrettings k tuning chromaticSets =
-  let frettingSets =
-        parMap
-          rdeepseq
-          ( Set.map snd
-              . findFrettings k tuning
+  case candidateVectors of
+    [] -> []
+    firstVec : restVecs
+      | any V.null (firstVec : restVecs) -> []
+      | otherwise ->
+          let initialLayer = V.map toInitialEntry firstVec
+              layers = scanl buildNext initialLayer restVecs
+              finalLayer = last layers
+           in case bestFinalIndex finalLayer of
+                Nothing -> []
+                Just bestIdx ->
+                  let frettingsRev = reconstructPath (reverse layers) bestIdx
+                   in reverse frettingsRev
+  where
+    candidateVectors =
+      parMap
+        rdeepseq
+        ( V.fromList
+            . Set.toAscList
+            . findFrettings k tuning
+        )
+        chromaticSets
+
+    toInitialEntry :: (Word8, Fretting) -> PathEntry
+    toInitialEntry (score, fretting) =
+      PathEntry
+        { peCost =
+            Just
+              PathCost
+                { pcTransitions = 0,
+                  pcBase = fromIntegral score
+                },
+          pePrev = Nothing,
+          peFretting = fretting
+        }
+
+    buildNext :: V.Vector PathEntry -> V.Vector (Word8, Fretting) -> V.Vector PathEntry
+    buildNext prevVec currentVec =
+      V.imap
+        ( \idx (score, currentFretting) ->
+            let baseCost = fromIntegral score
+                options =
+                  [ ( PathCost
+                        { pcTransitions = pcTransitions prevCost + dist,
+                          pcBase = pcBase prevCost + baseCost
+                        },
+                      prevIdx
+                    )
+                    | (prevIdx, prevEntry) <- zip [0 ..] (V.toList prevVec),
+                      Just prevCost <- [peCost prevEntry],
+                      let prevFretting = peFretting prevEntry,
+                      Just distWord <- [frettingDistance prevFretting currentFretting],
+                      let dist = fromIntegral distWord
+                  ]
+             in case options of
+                  [] ->
+                    PathEntry
+                      { peCost = Nothing,
+                        pePrev = Nothing,
+                        peFretting = currentFretting
+                      }
+                  _ ->
+                    let (bestTransition, bestPrevIdx) =
+                          minimumBy (comparing fst) options
+                        bestCost =
+                          bestTransition
+                            { pcBase = pcBase bestTransition + baseCost
+                            }
+                     in PathEntry
+                          { peCost = Just bestCost,
+                            pePrev = Just bestPrevIdx,
+                            peFretting = currentFretting
+                          }
+        )
+        currentVec
+
+    bestFinalIndex :: V.Vector PathEntry -> Maybe Int
+    bestFinalIndex vec =
+      fmap fst $
+        V.ifoldl'
+          ( \acc idx entry ->
+              case peCost entry of
+                Nothing -> acc
+                Just entryCost ->
+                  case acc of
+                    Nothing -> Just (idx, entryCost)
+                    Just (_, bestCost)
+                      | entryCost < bestCost -> Just (idx, entryCost)
+                      | otherwise -> acc
           )
-          chromaticSets
-      allCombinations = mapM Set.toList frettingSets
-      allSequntialPairs = zip allCombinations (drop 1 allCombinations)
-   in if null allCombinations
-        then []
-        else
-          let distances =
-                parMap
-                  rdeepseq
-                  (uncurry calculateDistance)
-                  allSequntialPairs
-              minDistanceCombination =
-                minimumBy
-                  (comparing fst)
-                  (zip distances allCombinations)
-              optimalFrettings = snd minDistanceCombination
-           in optimalFrettings
+          Nothing
+          vec
 
--- | Calculates the total distance between frettings in a combination
-calculateDistance :: [Fretting] -> [Fretting] -> Int
-calculateDistance s = sum . zipWith frettingDistance' s
-
--- | Calculates the distance between two frettings
-frettingDistance' :: Fretting -> Fretting -> Int
-frettingDistance' (Fretting _ frets1) (Fretting _ frets2) =
-  let positions1 =
-        Set.map (Data.Bifunctor.second fromJust) $
-          Set.filter ((/= Nothing) . snd) frets1
-      positions2 =
-        Set.map (Data.Bifunctor.second fromJust) $
-          Set.filter ((/= Nothing) . snd) frets2
-      distance =
-        sum $
-          zipWith
-            ( \(_, (_, f1)) (_, (_, f2)) ->
-                abs (f1 - f2)
-            )
-            (Set.toList positions1)
-            (Set.toList positions2)
-   in distance
+    reconstructPath :: [V.Vector PathEntry] -> Int -> [Fretting]
+    reconstructPath [] _ = []
+    reconstructPath (vec : rest) idx =
+      let entry = vec V.! idx
+       in peFretting entry
+            : case (pePrev entry, rest) of
+                (Just prevIdx, prevVec : prevRest) ->
+                  reconstructPath (prevVec : prevRest) prevIdx
+                _ -> []
 
 cProgression :: [Set Chromatic]
 cProgression =

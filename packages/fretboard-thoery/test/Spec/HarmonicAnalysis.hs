@@ -64,12 +64,12 @@ discoverChordFile = do
         "Unable to locate docs/extracted_chords.json from the current working directory."
 
 mozartExpectedSequence ::
-  [(Mode, Function, Int, Maybe String)]
+  [(Mode, Function, Int, Maybe String, Int)]
 mozartExpectedSequence =
-  [ (Ionian, Tonic, 9, Just "I"),
-    (Ionian, Tonic, 9, Just "I"),
-    (Ionian, Dominant, 9, Just "V"),
-    (Ionian, Tonic, 9, Just "I")
+  [ (Ionian, Tonic, 9, Just "I", 9),
+    (Ionian, Tonic, 9, Just "I", 9),
+    (Ionian, Dominant, 9, Just "V", 9),
+    (Ionian, Tonic, 9, Just "I", 9)
   ]
 
 tests :: TestTree
@@ -97,11 +97,12 @@ mozartWindowedAnalysisTest =
     let pitchSets = fmap stepPitchClasses steps
     assertBool "pitch-class sets should not be empty" (all (not . Set.null) pitchSets)
 
-compareStep :: HarmonicStep -> (Mode, Function, Int, Maybe String) -> IO ()
-compareStep step (expectedMode, expectedFunction, expectedTonality, expectedRoman) = do
+compareStep :: HarmonicStep -> (Mode, Function, Int, Maybe String, Int) -> IO ()
+compareStep step (expectedMode, expectedFunction, expectedTonality, expectedRoman, expectedKeyCenter) = do
   let harmony = stepHarmony step
       point = stepPoint step
       actualTonality = fromIntegral (unMod (unCol (col point)))
+      actualKeyCenter = fromIntegral (unMod (annotationKeyCenter harmony))
 
   assertEqual "mode" expectedMode (annotationMode harmony)
   assertEqual "function" expectedFunction (annotationFunction harmony)
@@ -111,3 +112,4 @@ compareStep step (expectedMode, expectedFunction, expectedTonality, expectedRoma
     (annotationDegree harmony)
   assertEqual "roman numeral" expectedRoman (annotationRomanNumeral harmony)
   assertEqual "tonality column" expectedTonality actualTonality
+  assertEqual "key center" expectedKeyCenter actualKeyCenter

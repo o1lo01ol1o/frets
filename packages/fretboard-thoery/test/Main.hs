@@ -1,5 +1,6 @@
 module Main (main) where
 
+import qualified Spec.Fretboard as FretboardSpec
 import qualified Spec.HarmonicAnalysis as HarmonicAnalysis
 import qualified Spec.HarmonicAnalysisHMatrix as HarmonicAnalysisHMatrix
 import Test.Tasty
@@ -11,6 +12,7 @@ tests :: TestTree
 tests =
   testGroup
     "fretboard-thoery tests"
-    [ HarmonicAnalysis.tests,
+    [ FretboardSpec.tests,
+      HarmonicAnalysis.tests,
       HarmonicAnalysisHMatrix.tests
     ]

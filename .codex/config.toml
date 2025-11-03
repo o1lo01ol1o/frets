@@ -1,0 +1,7 @@
+[mcp_servers.ghcid]
+command = "/usr/bin/env"
+args = ["direnv", "exec", ".", "mcp-ghcid", "--log-level", "debug"]
+timeout = 60000
+
+[projects."/Users/timpierson/arity/fretboard-thoery"]
+trust_level = "trusted"

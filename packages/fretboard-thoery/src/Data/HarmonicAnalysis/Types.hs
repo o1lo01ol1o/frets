@@ -144,7 +144,8 @@ data FunctionalHarmonyAnnotation = FunctionalHarmonyAnnotation
   { annotationMode :: Mode,
     annotationFunction :: Function,
     annotationDegree :: Degree,
-    annotationRomanNumeral :: Maybe String
+    annotationRomanNumeral :: Maybe String,
+    annotationKeyCenter :: Mod 12
   }
   deriving (Eq, Show, Generic, NFData)
 

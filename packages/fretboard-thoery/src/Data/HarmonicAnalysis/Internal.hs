@@ -1415,12 +1415,14 @@ annotateHarmonicPath config pitchSets (HarmonicPath points) =
       annotatePoint point =
         let pitchSet = fromMaybe Set.empty (pitchVector V.!? matrixIndex point)
             (mode, function) = rowToModeFunctionWithConfig config (unRow $ row point)
+            tonality = unCol (col point)
             harmony =
               FunctionalHarmonyAnnotation
                 { annotationMode = mode,
                   annotationFunction = function,
                   annotationDegree = functionToDegree function,
-                  annotationRomanNumeral = functionalRomanNumeral mode function
+                  annotationRomanNumeral = functionalRomanNumeral mode function,
+                  annotationKeyCenter = tonality
                 }
          in HarmonicStep point pitchSet harmony
    in AnnotatedHarmonicPath (map annotatePoint points)
@@ -1437,12 +1439,14 @@ annotateHarmonicPathForConfig configNum pitchSets (HarmonicPath points) =
       annotatePoint point =
         let pitchSet = fromMaybe Set.empty (pitchVector V.!? matrixIndex point)
             (mode, function) = rowToModeFunctionForConfig configNum (unRow $ row point)
+            tonality = unCol (col point)
             harmony =
               FunctionalHarmonyAnnotation
                 { annotationMode = mode,
                   annotationFunction = function,
                   annotationDegree = functionToDegree function,
-                  annotationRomanNumeral = functionalRomanNumeral mode function
+                  annotationRomanNumeral = functionalRomanNumeral mode function,
+                  annotationKeyCenter = tonality
                 }
          in HarmonicStep point pitchSet harmony
    in AnnotatedHarmonicPath (map annotatePoint points)

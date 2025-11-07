@@ -3,6 +3,7 @@ module Main (main) where
 import qualified Spec.Fretboard as FretboardSpec
 import qualified Spec.HarmonicAnalysis as HarmonicAnalysis
 import qualified Spec.HarmonicAnalysisHMatrix as HarmonicAnalysisHMatrix
+import qualified Spec.Playback as PlaybackSpec
 import Test.Tasty
 
 main :: IO ()
@@ -14,5 +15,6 @@ tests =
     "fretboard-thoery tests"
     [ FretboardSpec.tests,
       HarmonicAnalysis.tests,
-      HarmonicAnalysisHMatrix.tests
+      HarmonicAnalysisHMatrix.tests,
+      PlaybackSpec.tests
     ]

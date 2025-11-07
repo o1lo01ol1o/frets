@@ -181,6 +181,22 @@ pre {
   color: #334155;
 }
 
+.fretboard-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.fretboard-meta {
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.fretboard-meta strong {
+  color: #1f2937;
+  margin-right: 0.25rem;
+}
+
 .fretboard-container {
   margin-top: 1.25rem;
   overflow-x: auto;
@@ -191,4 +207,177 @@ pre {
   margin-bottom: 1.5rem;
   color: #475569;
   font-size: 0.95rem;
+}
+
+.status.info {
+  color: #0f172a;
+}
+
+.tonnetz-widget {
+  margin-top: 1.5rem;
+}
+
+.tonnetz-widget .controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.tonnetz-widget .controls .field {
+  flex: 1;
+  min-width: 180px;
+  margin-bottom: 0;
+}
+
+.tonnetz-record-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.tonnetz-record-button {
+  background-color: #dc2626;
+}
+
+.tonnetz-record-button.active {
+  background-color: #991b1b;
+}
+
+.tonnetz-record-controls button {
+  min-width: 120px;
+}
+
+.tonnetz-synth-status {
+  font-size: 0.95rem;
+  color: #1f2937;
+}
+
+.tonnetz-canvas {
+  border: 1px solid rgba(15, 20, 25, 0.08);
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 0.5rem;
+  overflow: auto;
+  max-width: 100%;
+}
+
+.tonnetz-svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.tonnetz-recorded {
+  margin-top: 1.5rem;
+  border: 1px solid rgba(15, 20, 25, 0.08);
+  border-radius: 12px;
+  padding: 1rem;
+  background: #ffffff;
+}
+
+.tonnetz-recorded h3 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  font-size: 1.1rem;
+  color: #1f2937;
+}
+
+.tonnetz-recorded ol {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tonnetz-recorded li {
+  display: flex;
+  flex-direction: column;
+}
+
+.tonnetz-recorded-chord {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.tonnetz-recorded-notes {
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.tonnetz-recorded-aliases {
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.tonnetz-transpose-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tonnetz-transpose-controls input {
+  width: 80px;
+  text-align: center;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid rgba(15, 20, 25, 0.16);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.tonnetz-transpose-step {
+  min-width: 2.5rem;
+  padding: 0.35rem 0.75rem;
+}
+
+.tonnetz-transpose-reset {
+  padding: 0.35rem 0.75rem;
+  background-color: #0ea5e9;
+}
+
+.tonnetz-transpose-reset:hover {
+  background-color: #0284c7;
+}
+
+.tonnetz-current-transpose {
+  font-size: 0.95rem;
+  color: #334155;
+  margin-top: 0.25rem;
+}
+
+.tonnetz-recorded-transpose {
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.tonnetz-current {
+  margin-top: 1.5rem;
+  border: 1px solid rgba(15, 20, 25, 0.08);
+  border-radius: 12px;
+  padding: 1rem;
+  background: #f8fafc;
+}
+
+.tonnetz-current h3 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+  color: #0f172a;
+}
+
+.tonnetz-current-name {
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: #1f2937;
+}
+
+.tonnetz-current-aliases,
+.tonnetz-current-notes {
+  font-size: 0.95rem;
+  color: #475569;
+  margin-top: 0.25rem;
 }

@@ -20,7 +20,7 @@
 module Modulation where
 
 import Algebra.Lattice
-import Control.Lens
+import Control.Lens hiding (index)
 import Control.Lens.TH
 import Control.Monad (guard)
 import Control.Parallel.Strategies (NFData)
@@ -141,22 +141,22 @@ cIonian :: HeptatonicScale (Mod 12)
 cIonian = fmap toLocalInterpretation (HeptatonicScale C D E F G A B)
 
 cDorian :: HeptatonicScale (Mod 12)
-cDorian = succMode cIonian
+cDorian = transposeToC $ succMode cIonian
 
 cPhrygian :: HeptatonicScale (Mod 12)
-cPhrygian = succMode cDorian
+cPhrygian = transposeToC $ succMode (succMode cIonian)
 
 cLydian :: HeptatonicScale (Mod 12)
-cLydian = succMode cPhrygian
+cLydian = transposeToC $ succMode (succMode (succMode cIonian))
 
 cMixolydian :: HeptatonicScale (Mod 12)
-cMixolydian = succMode cLydian
+cMixolydian = transposeToC $ succMode (succMode (succMode (succMode cIonian)))
 
 cAeolian :: HeptatonicScale (Mod 12)
-cAeolian = succMode cMixolydian
+cAeolian = transposeToC $ succMode (succMode (succMode (succMode (succMode cIonian))))
 
 cLocrian :: HeptatonicScale (Mod 12)
-cLocrian = succMode cAeolian
+cLocrian =  transposeToC $ succMode (succMode (succMode (succMode (succMode cIonian))))
 
 cModes :: [HeptatonicScale (Mod 12)]
 cModes =
@@ -168,6 +168,13 @@ cModes =
     cAeolian,
     cLocrian
   ]
+
+transposeToC = transposeToTonic (toLocalInterpretation C)
+
+transposeToTonic :: Mod 12 -> HeptatonicScale (Mod 12) -> HeptatonicScale (Mod 12)
+transposeToTonic tonic scale@(HeptatonicScale a _ _ _ _ _ _) =
+  let shift = tonic - a
+   in transposeScale (transposition shift) scale
 
 cHarmonicMinor :: HeptatonicScale (Mod 12)
 cHarmonicMinor = fmap toLocalInterpretation (HeptatonicScale C D Eb F G Gs B)

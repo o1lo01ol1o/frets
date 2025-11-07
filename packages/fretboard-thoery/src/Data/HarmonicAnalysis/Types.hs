@@ -96,11 +96,13 @@ import Modulation hiding (Aeolian, Dorian, Ionian, Locrian, Lydian, Mixolydian, 
 
 -- | Row index in a Riemann matrix, encoding both mode and function
 newtype Row = Row {unRow :: Int}
-  deriving (Eq, Show, Ord, Generic, NFData, Num)
+  deriving stock (Eq, Show, Ord, Generic)
+  deriving newtype (Num, NFData)
 
 -- | Column index in a Riemann matrix, representing tonality
 newtype Col = Col {unCol :: Mod 12}
-  deriving (Eq, Show, Ord, Generic, NFData)
+  deriving stock (Eq, Show, Ord, Generic)
+  deriving newtype (NFData)
 
 -- | A point in the Riemann Matrix representing a specific harmonic interpretation
 -- of a pitch set. The interpretation includes the pitch set's tonality (col) and its
@@ -249,7 +251,8 @@ newtype ChainOfThirds = ChainOfThirds
   { -- | Pitch classes in the chain
     chainPitches :: Set (Mod 12)
   }
-  deriving (Eq, Show, Ord, Generic, NFData)
+  deriving stock (Eq, Show, Ord, Generic)
+  deriving newtype (NFData)
 
 -- | Matrix representing all possible harmonic interpretations of a chord.
 -- Each cell contains a weight indicating the strength of that interpretation.

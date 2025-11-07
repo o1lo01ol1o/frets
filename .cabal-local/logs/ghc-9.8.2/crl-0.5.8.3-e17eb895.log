@@ -1,0 +1,5 @@
+Configuring library for cereal-0.5.8.3..
+warning: unhandled Platform key FamilyDisplayName
+warning: unhandled Platform key FamilyDisplayName
+clang: error: unable to execute command: posix_spawn failed: Resource temporarily unavailable
+`gcc' failed in phase `C Compiler'. (Exit code: 1)

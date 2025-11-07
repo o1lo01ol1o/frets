@@ -27,6 +27,8 @@ module Fretboard
     KnownGuitarTunings (..),
     optimizeFrettings,
     chromaticsFromFretting,
+    occurrencesForPitchClasses,
+    FretboardNoteOccurrence (..),
     drawFrettingWithPossibleChords,
     VoiceScale,
     drawScale,
@@ -139,6 +141,16 @@ data PathEntry = PathEntry
     pePrev :: !(Maybe Int),
     peFretting :: !Fretting
   }
+
+data FretboardNoteOccurrence = FretboardNoteOccurrence
+  { fnoString :: !Int,
+    fnoFret :: !Int,
+    fnoChromatic :: !Chromatic,
+    fnoPitchClass :: !(Mod 12),
+    fnoOctave :: !(Maybe Int)
+  }
+  deriving stock (Eq, Show, Ord, Generic)
+  deriving anyclass (NFData)
 
 notePosition :: (Int, Maybe (Finger, Int)) -> NotePosition
 notePosition (s, mbFingerFret) =
@@ -719,6 +731,45 @@ optimizeFrettings k tuning chromaticSets =
                 (Just prevIdx, prevVec : prevRest) ->
                   reconstructPath (prevVec : prevRest) prevIdx
                 _ -> []
+
+occurrencesForPitchClasses ::
+  Fretboard ->
+  Int ->
+  [Maybe Int] ->
+  Set Chromatic ->
+  [FretboardNoteOccurrence]
+occurrencesForPitchClasses fretboard maxFrets baseOctaves chromatics =
+  concat
+    [ stringOccurrences stringIndex openChromatic baseOctave
+      | (stringIndex, openChromatic, baseOctave) <- zip3 [0 ..] (tuning fretboard) octavesWithFallback
+    ]
+  where
+    octavesWithFallback = take (numStrings fretboard) (baseOctaves ++ repeat Nothing)
+
+    stringOccurrences :: Int -> Chromatic -> Maybe Int -> [FretboardNoteOccurrence]
+    stringOccurrences stringIndex openChromatic baseOctave =
+      [ FretboardNoteOccurrence
+          { fnoString = stringIndex,
+            fnoFret = fret,
+            fnoChromatic = noteChromatic,
+            fnoPitchClass = notePitchClass,
+            fnoOctave = computeOctave baseOctave openPitchClass fret
+          }
+        | fret <- [0 .. maxFrets],
+          let noteChromatic = transposeChromatic openChromatic (transposition (fromIntegral fret)),
+          Set.member noteChromatic chromatics,
+          let notePitchClass = toLocalInterpretation noteChromatic
+      ]
+      where
+        openPitchClass = toLocalInterpretation openChromatic :: Mod 12
+
+    computeOctave :: Maybe Int -> Mod 12 -> Int -> Maybe Int
+    computeOctave Nothing _ _ = Nothing
+    computeOctave (Just baseOctave) openPitchClass fret =
+      let openPcInt = fromIntegral (unMod openPitchClass)
+          total = openPcInt + fret
+          octaveOffset = total `div` 12
+       in Just (baseOctave + octaveOffset)
 
 cProgression :: [Set Chromatic]
 cProgression =

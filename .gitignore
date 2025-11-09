@@ -32,3 +32,6 @@ dist-newstyle/
 .codex/*
 !.codex/config.toml
 .DS_STORE
+# JavaScript dependencies
+node_modules/
+**/node_modules/

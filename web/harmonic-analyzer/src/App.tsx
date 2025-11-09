@@ -1,7 +1,11 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import TonnetzWidget from "./TonnetzWidget";
-
-type PitchClassName = string;
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import TonnetzWidget, { type RecordedChord } from "./TonnetzWidget";
+import FretboardOverlayDiagram, {
+  DEFAULT_CHORD_COLOR,
+  DEFAULT_SCALE_DIFF_OUTLINE_COLOR,
+  DEFAULT_SCALE_DIFF_STROKE_WIDTH,
+  type FretboardOverlaySet
+} from "./FretboardOverlayDiagram";
 
 type AnalysisPreset =
   | "MajorMinorTSD"
@@ -56,43 +60,17 @@ type VoiceLeadingResponse = {
   steps: VoiceLeadingStep[];
 };
 
-type BackendFretboardOccurrence = {
-  string: number;
-  fret: number;
-  pitchClass: number;
-  pitchClassName: string;
-  octave: number | null;
-  noteName: string;
-};
-
-type BackendFretboardOccurrenceSet = {
-  id: string;
-  label?: string | null;
-  pitchClasses: number[];
-  pitchClassNames: string[];
-  occurrences: BackendFretboardOccurrence[];
-};
-
-type FretboardOccurrencesResponsePayload = {
-  noteSets: BackendFretboardOccurrenceSet[];
-};
-
-type BackendChordNameEntry = {
-  id: string;
-  pitchClasses: number[];
-  name: string | null;
-  aliases: string[];
-};
-
-type FretboardChordNamesResponsePayload = {
-  chordNames: BackendChordNameEntry[];
-};
-
 type ScaleNotesResponsePayload = {
   pitchClasses: number[];
   pitchClassNames: string[];
   diffPitchClasses?: number[];
   diffPitchClassNames?: string[];
+};
+
+type TuningOption = {
+  id: string;
+  label: string;
+  strings: string[];
 };
 
 const PRESET_OPTIONS: Array<{ label: string; value: AnalysisPreset }> = [
@@ -102,14 +80,116 @@ const PRESET_OPTIONS: Array<{ label: string; value: AnalysisPreset }> = [
   { label: "Modal (Full diatonic)", value: "ModalDiatonic" }
 ];
 
-const mozartExample = [
-  ["E", "A", "Cs"],
-  ["E", "A", "Cs"],
-  ["D", "E", "Gs", "B"],
-  ["Cs", "E", "A"]
+const DEFAULT_GUITAR_TUNING = ["E2", "A2", "D3", "G3", "B3", "E4"] as const;
+
+const GUITAR_STRING_OCTAVES = [2, 2, 3, 3, 3, 4] as const;
+const BASS_STRING_OCTAVES = [1, 1, 2, 2] as const;
+
+const makeGuitarTuning = (notes: string[]): string[] =>
+  notes.map((note, index) => `${note}${GUITAR_STRING_OCTAVES[index] ?? GUITAR_STRING_OCTAVES[GUITAR_STRING_OCTAVES.length - 1]}`);
+
+const makeBassTuning = (notes: string[]): string[] =>
+  notes.map((note, index) => `${note}${BASS_STRING_OCTAVES[index] ?? BASS_STRING_OCTAVES[BASS_STRING_OCTAVES.length - 1]}`);
+
+const TUNING_OPTIONS: TuningOption[] = [
+  {
+    id: "guitar-standard",
+    label: "Guitar – Standard (E A D G B E)",
+    strings: [...DEFAULT_GUITAR_TUNING]
+  },
+  {
+    id: "guitar-drop-d",
+    label: "Guitar – Drop D (D A D G B E)",
+    strings: makeGuitarTuning(["D", "A", "D", "G", "B", "E"])
+  },
+  {
+    id: "guitar-double-harmonic-major",
+    label: "Guitar – Double Harmonic Major (Bb A D G Bb D)",
+    strings: makeGuitarTuning(["Bb", "A", "D", "G", "Bb", "D"])
+  },
+  {
+    id: "guitar-drop-csharp",
+    label: "Guitar – Drop C# (C# A D G B E)",
+    strings: makeGuitarTuning(["Cs", "A", "D", "G", "B", "E"])
+  },
+  {
+    id: "guitar-drop-c",
+    label: "Guitar – Drop C (C G C F A D)",
+    strings: makeGuitarTuning(["C", "G", "C", "F", "A", "D"])
+  },
+  {
+    id: "guitar-drop-b",
+    label: "Guitar – Drop B (B F# B E G# C#)",
+    strings: makeGuitarTuning(["B", "Fs", "B", "E", "Gs", "Cs"])
+  },
+  {
+    id: "guitar-drop-a",
+    label: "Guitar – Drop A (A E A D F# B)",
+    strings: makeGuitarTuning(["A", "E", "A", "D", "Fs", "B"])
+  },
+  {
+    id: "guitar-dadgad",
+    label: "Guitar – DADGAD (D A D G A D)",
+    strings: makeGuitarTuning(["D", "A", "D", "G", "A", "D"])
+  },
+  {
+    id: "guitar-half-step-down",
+    label: "Guitar – Half Step Down (Eb Ab Db Gb Bb Eb)",
+    strings: makeGuitarTuning(["Eb", "Gs", "Cs", "Fs", "Bb", "Eb"])
+  },
+  {
+    id: "guitar-full-step-down",
+    label: "Guitar – Full Step Down (D G C F A D)",
+    strings: makeGuitarTuning(["D", "G", "C", "F", "A", "D"])
+  },
+  {
+    id: "guitar-half-step-up",
+    label: "Guitar – Half Step Up (F Bb Eb G# C F)",
+    strings: makeGuitarTuning(["F", "Bb", "Eb", "Gs", "C", "F"])
+  },
+  {
+    id: "guitar-open-c",
+    label: "Guitar – Open C (C G C G C E)",
+    strings: makeGuitarTuning(["C", "G", "C", "G", "C", "E"])
+  },
+  {
+    id: "guitar-open-d",
+    label: "Guitar – Open D (D A D F# A D)",
+    strings: makeGuitarTuning(["D", "A", "D", "Fs", "A", "D"])
+  },
+  {
+    id: "guitar-open-e",
+    label: "Guitar – Open E (E B E G# B E)",
+    strings: makeGuitarTuning(["E", "B", "E", "Gs", "B", "E"])
+  },
+  {
+    id: "guitar-open-f",
+    label: "Guitar – Open F (F A C F C F)",
+    strings: makeGuitarTuning(["F", "A", "C", "F", "C", "F"])
+  },
+  {
+    id: "guitar-open-g",
+    label: "Guitar – Open G (D G D G B D)",
+    strings: makeGuitarTuning(["D", "G", "D", "G", "B", "D"])
+  },
+  {
+    id: "guitar-open-a",
+    label: "Guitar – Open A (E A E A C# E)",
+    strings: makeGuitarTuning(["E", "A", "E", "A", "Cs", "E"])
+  },
+  {
+    id: "bass-standard-4",
+    label: "Bass – Standard 4-String (E A D G)",
+    strings: makeBassTuning(["E", "A", "D", "G"])
+  },
+  {
+    id: "bass-drop-d",
+    label: "Bass – Drop D (D A D G)",
+    strings: makeBassTuning(["D", "A", "D", "G"])
+  }
 ];
 
-const DEFAULT_PROGRESSION = JSON.stringify(mozartExample, null, 2);
+const DEFAULT_TUNING_ID = "guitar-standard";
 
 const defaultServer = (() => {
   if (typeof window === "undefined") {
@@ -124,30 +204,9 @@ const defaultServer = (() => {
   return "http://localhost:8080";
 })();
 
-const DEFAULT_TUNING_LIST = ["E2", "A2", "D3", "G3", "B3", "E4"] as const;
-const DEFAULT_TUNING = JSON.stringify(DEFAULT_TUNING_LIST);
-const DEFAULT_MAX_CANDIDATES = "12";
+const normalisePitchClass = (value: number): number => ((value % 12) + 12) % 12;
 
-const DEFAULT_FRET_COUNT = 12;
-const DEFAULT_CHORD_COLOR = "#ef4444";
-const DEFAULT_SCALE_DIFF_OUTLINE_COLOR = "#FDE725";
-const DEFAULT_SCALE_DIFF_STROKE_WIDTH = 3;
-type SerializedTuningEntry = string | number | { pitch: string; octave?: number };
-
-const VIRIDIS_COLORS: readonly string[] = [
-  "#440154",
-  "#482878",
-  "#3E4A89",
-  "#31688E",
-  "#26828E",
-  "#1F9E89",
-  "#35B779",
-  "#6CCE59",
-  "#B4DD2C",
-  "#FDE725"
-] as const;
-
-const normalizePitchClass = (value: number): number => ((value % 12) + 12) % 12;
+const normaliseUrl = (raw: string): string => raw.replace(/\/+$/, "");
 
 const CHROMATIC_NAMES: readonly string[] = [
   "C",
@@ -185,88 +244,18 @@ const resolveModeKey = (modeName?: string | null): string | null => {
     return null;
   }
   const normalized = trimmed.replace(/\s+/g, "");
-  return MODE_INTERVALS[trimmed]
-    ? trimmed
-    : MODE_INTERVALS[normalized]
-      ? normalized
-      : MODE_INTERVALS[normalized.charAt(0).toUpperCase() + normalized.slice(1).toLowerCase()]
-        ? normalized.charAt(0).toUpperCase() + normalized.slice(1).toLowerCase()
-        : null;
-};
-
-
-type OverlayMarker = {
-  string: number;
-  fret: number;
-  label?: string;
-  group?: string;
-  color?: string;
-  outlineColor?: string;
-  strokeWidth?: number;
-};
-
-type FretboardOverlaySet = {
-  id: string;
-  notes?: PitchClassName[];
-  positions?: VoiceLeadingStringPosition[];
-  color?: string;
-  label?: string;
-  maxFret?: number;
-  scaleMode?: string;
-  scaleRoot?: string;
-  pitchClassNumbers?: number[];
-  useOutline?: boolean;
-  outlineColor?: string;
-  strokeWidth?: number;
-};
-
-function buildMarkersForPositions(
-  tuning: string[],
-  positions: VoiceLeadingStringPosition[],
-  group: string,
-  color?: string
-): OverlayMarker[] {
-  const stringCount = tuning.length;
-  return positions.map((position) => {
-    const rawString = position.string ?? 0;
-    const fret = position.fret ?? 0;
-    let stringNumber: number;
-    if (rawString >= 1 && rawString <= stringCount) {
-      stringNumber = rawString;
-    } else {
-      stringNumber = mapBackendStringToFretboard(rawString, stringCount);
-    }
-    stringNumber = Math.max(1, Math.min(stringCount, stringNumber));
-    const label =
-      (position.label && position.label.length > 0 ? position.label : undefined) ??
-      (position.noteName && position.noteName.length > 0 ? position.noteName : undefined) ??
-      (position.finger && position.finger.length > 0 ? position.finger : undefined) ??
-      position.pitchClass ??
-      undefined;
-    return {
-      string: stringNumber,
-      fret,
-      label,
-      group,
-      color
-    };
-  });
-}
-
-function normaliseUrl(raw: string): string {
-  return raw.replace(/\/+$/, "");
-}
-
-function parseJsonInput<T>(raw: string, description: string): T {
-  try {
-    return JSON.parse(raw) as T;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid JSON input.";
-    throw new Error(`${description}: ${message}`);
+  if (MODE_INTERVALS[trimmed]) {
+    return trimmed;
   }
-}
+  if (MODE_INTERVALS[normalized]) {
+    return normalized;
+  }
+  const canonical =
+    normalized.charAt(0).toUpperCase() + normalized.slice(1).toLowerCase();
+  return MODE_INTERVALS[canonical] ? canonical : null;
+};
 
-function splitPitchAndOctave(token: string): { pitch: string; octave?: number } {
+const splitPitchAndOctave = (token: string): { pitch: string; octave?: number } => {
   const trimmed = token.trim();
   if (!trimmed) {
     return { pitch: trimmed };
@@ -284,1301 +273,547 @@ function splitPitchAndOctave(token: string): { pitch: string; octave?: number } 
     return { pitch, octave: Number.isNaN(octave) ? undefined : octave };
   }
   return { pitch: trimmed.toUpperCase() };
-}
+};
 
-function formatPitchDisplay(pitch: string, octave?: number): string {
-  if (!pitch) {
-    return "";
+const serializeTuningValue = (entry: string): string | number | { pitch: string; octave?: number } => {
+  const { pitch, octave } = splitPitchAndOctave(entry);
+  if (octave !== undefined) {
+    return { pitch, octave };
   }
-  const letter = pitch[0];
-  const accidental = pitch.slice(1).replace(/B/g, "b");
-  const base = `${letter}${accidental}`;
-  return octave !== undefined ? `${base}${octave}` : base;
-}
+  return { pitch };
+};
 
-function serializeTuningValue(entry: unknown): SerializedTuningEntry {
-  if (typeof entry === "string" && entry.trim().length > 0) {
-    const { pitch, octave } = splitPitchAndOctave(entry);
-    const payload: { pitch: string; octave?: number } = { pitch };
-    if (octave !== undefined) {
-      payload.octave = octave;
-    }
-    return payload;
-  }
-  if (typeof entry === "number") {
-    return entry;
-  }
-  if (entry && typeof entry === "object") {
-    const obj = entry as { pitch?: unknown; octave?: unknown };
-    if (typeof obj.pitch === "string" && obj.pitch.trim().length > 0) {
-      const { pitch, octave } = splitPitchAndOctave(obj.pitch);
-      const payload: { pitch: string; octave?: number } = { pitch };
-      if (typeof obj.octave === "number") {
-        payload.octave = obj.octave;
-      } else if (octave !== undefined) {
-        payload.octave = octave;
-      }
-      return payload;
-    }
-    return obj as SerializedTuningEntry;
-  }
-  throw new Error("Tuning entries must be strings, numbers, or pitch objects.");
-}
-
-function normaliseTuningEntries(entries: unknown[]): string[] {
-  return entries.map((entry, index) => {
-    if (typeof entry === "string" && entry.trim().length > 0) {
-      const { pitch, octave } = splitPitchAndOctave(entry);
-      return formatPitchDisplay(pitch, octave);
-    }
-    if (typeof entry === "number") {
-      return entry.toString(10);
-    }
-    if (entry && typeof entry === "object") {
-      const obj = entry as { pitch?: unknown; octave?: unknown };
-      if (typeof obj.pitch === "string") {
-        const { pitch, octave } = splitPitchAndOctave(obj.pitch);
-        const octaveValue = typeof obj.octave === "number" ? obj.octave : octave;
-        return formatPitchDisplay(pitch, octaveValue);
-      }
-    }
-    throw new Error(`Tuning entry at index ${index} must be a string, number, or pitch object.`);
-  });
-}
-
-function isPitchClassMatrix(value: unknown): value is unknown[][] {
-  return Array.isArray(value) && value.every((item) => Array.isArray(item));
-}
+type AsyncState = "idle" | "loading" | "success" | "error";
 
 function App() {
   const [serverUrl, setServerUrl] = useState<string>(defaultServer);
   const [preset, setPreset] = useState<AnalysisPreset>("ModalDiatonic");
-  const [progressionText, setProgressionText] = useState<string>(DEFAULT_PROGRESSION);
-  const [isSubmitting, setSubmitting] = useState<boolean>(false);
-  const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [response, setResponse] = useState<AnalyzeResponse | null>(null);
-  const controllerRef = useRef<AbortController | null>(null);
+  const [recordedChords, setRecordedChords] = useState<RecordedChord[]>([]);
+  const [progression, setProgression] = useState<number[][]>([]);
+  const [isRecording, setIsRecording] = useState(false);
 
-  const [voiceTuningText, setVoiceTuningText] = useState<string>(DEFAULT_TUNING);
-  const [voiceProgressionText, setVoiceProgressionText] = useState<string>(DEFAULT_PROGRESSION);
-  const [voiceMaxCandidates, setVoiceMaxCandidates] = useState<string>(DEFAULT_MAX_CANDIDATES);
-  const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+  const [analysisState, setAnalysisState] = useState<AsyncState>("idle");
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
+  const [selectedTuningId, setSelectedTuningId] = useState<string>(DEFAULT_TUNING_ID);
+  const selectedTuning = useMemo<TuningOption>(() => {
+    return TUNING_OPTIONS.find((option) => option.id === selectedTuningId) ?? TUNING_OPTIONS[0];
+  }, [selectedTuningId]);
+
+  const [voiceLeading, setVoiceLeading] = useState<VoiceLeadingResponse | null>(null);
+  const [voiceState, setVoiceState] = useState<AsyncState>("idle");
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [voiceResponse, setVoiceResponse] = useState<VoiceLeadingResponse | null>(null);
-  const [voiceTuningDisplay, setVoiceTuningDisplay] = useState<string[]>([...DEFAULT_TUNING_LIST]);
-  const [isVoiceSubmitting, setVoiceSubmitting] = useState<boolean>(false);
-  const [isDemoRunning, setDemoRunning] = useState<boolean>(false);
-  const voiceControllerRef = useRef<AbortController | null>(null);
-  const [overlayText, setOverlayText] = useState<string>("[]");
+  const [activeLoopIndex, setActiveLoopIndex] = useState<number | null>(null);
 
-  const { customOverlays, overlayParseError } = useMemo(() => {
-    if (overlayText.trim().length === 0) {
-      return { customOverlays: [] as FretboardOverlaySet[], overlayParseError: null };
-    }
-
-    try {
-      const parsed = JSON.parse(overlayText);
-      if (!Array.isArray(parsed)) {
-        throw new Error("Overlay configuration must be a JSON array.");
-      }
-      const overlays: FretboardOverlaySet[] = parsed
-        .map((raw, index) => {
-          if (!raw || typeof raw !== "object") {
-            throw new Error(`Overlay entry at index ${index} must be an object.`);
-          }
-          const id = typeof raw.id === "string" && raw.id.trim().length > 0 ? raw.id : `custom-${index}`;
-          const color = typeof raw.color === "string" ? raw.color : undefined;
-          const label = typeof raw.label === "string" ? raw.label : undefined;
-          const maxFret = typeof raw.maxFret === "number" ? raw.maxFret : undefined;
-          const notes = Array.isArray(raw.notes) ? raw.notes.map((note: unknown) => String(note)) : undefined;
-          const positions = Array.isArray(raw.positions)
-            ? (raw.positions as VoiceLeadingStringPosition[])
-            : undefined;
-          if ((!notes || notes.length === 0) && (!positions || positions.length === 0)) {
-            throw new Error(
-              `Overlay entry "${id}" must include a non-empty "notes" array or a non-empty "positions" array.`
-            );
-          }
-          return { id, color, label, maxFret, notes, positions } satisfies FretboardOverlaySet;
-        })
-        .filter(Boolean);
-
-      return { customOverlays: overlays, overlayParseError: null };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unable to parse overlay configuration.";
-      return { customOverlays: [] as FretboardOverlaySet[], overlayParseError: message };
-    }
-  }, [overlayText]);
-
-  const targetUrl = useMemo(() => `${normaliseUrl(serverUrl)}/analyze`, [serverUrl]);
-  const voiceUrl = useMemo(() => `${normaliseUrl(serverUrl)}/voice-leading`, [serverUrl]);
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    controllerRef.current?.abort();
-    setSubmitting(true);
-    setStatus("Submitting request… This can take several minutes for long progressions.");
-    setError(null);
-    setResponse(null);
-
-    let payload;
-    try {
-      payload = JSON.parse(progressionText);
-      if (!Array.isArray(payload) || payload.some((item) => !Array.isArray(item))) {
-        throw new Error("Progression must be a JSON array of arrays.");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not parse progression JSON.");
-      setStatus(null);
-      setSubmitting(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    controllerRef.current = controller;
-
-    try {
-      const res = await fetch(targetUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          preset,
-          progression: payload
-        }),
-        signal: controller.signal
-      });
-
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        const errorMessage =
-          (detail && typeof detail.error === "string" && detail.error) ||
-          `${res.status} ${res.statusText}`;
-        throw new Error(errorMessage);
-      }
-
-      const data = (await res.json()) as AnalyzeResponse;
-      setResponse(data);
-      setStatus("Analysis complete.");
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        setError("Request cancelled.");
-      } else {
-        setError(err instanceof Error ? err.message : "Unexpected error.");
-      }
-      setStatus(null);
-    } finally {
-      setSubmitting(false);
-      controllerRef.current = null;
-    }
-  };
-
-  const handleVoiceLeadingSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    voiceControllerRef.current?.abort();
-    setVoiceStatus("Fetching optimal fretboard voicings…");
-    setVoiceError(null);
-    setVoiceResponse(null);
-
-    let tuningEntries: unknown[];
-    let progressionPayload: unknown[][];
-
-    try {
-      const tuningValue = parseJsonInput<unknown>(voiceTuningText, "Tuning");
-      if (!Array.isArray(tuningValue)) {
-        throw new Error("Tuning must be a JSON array of pitch-class names or numbers.");
-      }
-      tuningEntries = tuningValue;
-      const displayTuning = normaliseTuningEntries(tuningEntries);
-      setVoiceTuningDisplay(displayTuning);
-
-      const progressionValue = parseJsonInput<unknown>(voiceProgressionText, "Progression");
-      if (!isPitchClassMatrix(progressionValue)) {
-        throw new Error("Progression must be a JSON array of pitch-class arrays.");
-      }
-      progressionPayload = progressionValue;
-    } catch (err) {
-      setVoiceError(err instanceof Error ? err.message : "Invalid voice-leading input.");
-      setVoiceStatus(null);
-      return;
-    }
-
-    let maxCandidatesNumber: number | undefined;
-    if (voiceMaxCandidates.trim().length > 0) {
-      const parsed = Number.parseInt(voiceMaxCandidates, 10);
-      if (!Number.isInteger(parsed) || parsed <= 0) {
-        setVoiceError("Max candidates must be a positive integer.");
-        setVoiceStatus(null);
-        return;
-      }
-      maxCandidatesNumber = parsed;
-    }
-
-    const controller = new AbortController();
-    voiceControllerRef.current = controller;
-    setVoiceSubmitting(true);
-
-    try {
-      const serializedTuning = tuningEntries.map(serializeTuningValue);
-
-      const res = await fetch(voiceUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          tuning: serializedTuning,
-          progression: progressionPayload,
-          maxCandidates: maxCandidatesNumber
-        }),
-        signal: controller.signal
-      });
-
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        const errMessage =
-          (detail && typeof detail.error === "string" && detail.error) ||
-          `${res.status} ${res.statusText}`;
-        throw new Error(errMessage);
-      }
-
-      const data = (await res.json()) as VoiceLeadingResponse;
-      console.debug("voice-leading payload", data);
-      setVoiceResponse(data);
-      setVoiceStatus("Voice leading computed successfully.");
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        setVoiceError("Voice-leading request cancelled.");
-      } else {
-        setVoiceError(err instanceof Error ? err.message : "Unexpected error.");
-      }
-      setVoiceStatus(null);
-    } finally {
-      setVoiceSubmitting(false);
-      voiceControllerRef.current = null;
-    }
-  };
-
-  const runMozartDemo = async () => {
-    if (isDemoRunning) {
-      return;
-    }
-    setDemoRunning(true);
-    setError(null);
-    setStatus("Running Mozart demo…");
-    setVoiceError(null);
-    setVoiceStatus(null);
-    setVoiceResponse(null);
-    setVoiceSubmitting(true);
-
-    const tuningStringList = [...DEFAULT_TUNING_LIST];
-    const progressionData = JSON.parse(DEFAULT_PROGRESSION) as unknown[][];
-
-    setProgressionText(DEFAULT_PROGRESSION);
-    setVoiceProgressionText(DEFAULT_PROGRESSION);
-    setVoiceTuningText(JSON.stringify(tuningStringList));
-    setVoiceTuningDisplay([...tuningStringList]);
-
-    try {
-      const analyzeRes = await fetch(targetUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          preset,
-          progression: progressionData
-        })
-      });
-
-      if (!analyzeRes.ok) {
-        const detail = await analyzeRes.json().catch(() => ({}));
-        const analyzeError =
-          (detail && typeof detail.error === "string" && detail.error) ||
-          `${analyzeRes.status} ${analyzeRes.statusText}`;
-        throw new Error(analyzeError);
-      }
-
-      const analyzeData = (await analyzeRes.json()) as AnalyzeResponse;
-      setResponse(analyzeData);
-      setStatus("Analysis complete.");
-
-      const serializedTuning = tuningStringList.map((value) => serializeTuningValue(value));
-
-      const voiceRes = await fetch(voiceUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          tuning: serializedTuning,
-          progression: progressionData,
-          maxCandidates: Number.parseInt(voiceMaxCandidates, 10) || undefined
-        })
-      });
-
-      if (!voiceRes.ok) {
-        const detail = await voiceRes.json().catch(() => ({}));
-        const voiceErrorMessage =
-          (detail && typeof detail.error === "string" && detail.error) ||
-          `${voiceRes.status} ${voiceRes.statusText}`;
-        throw new Error(voiceErrorMessage);
-      }
-
-      const voiceData = (await voiceRes.json()) as VoiceLeadingResponse;
-      setVoiceResponse(voiceData);
-      setVoiceStatus("Voice leading computed successfully.");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unexpected error.";
-      setError(message);
-      setVoiceError(message);
-      setStatus(null);
-      setVoiceStatus(null);
-    } finally {
-      setVoiceSubmitting(false);
-      setDemoRunning(false);
-    }
-  };
-
-  return (
-    <div className="app">
-      <h1>Harmonic Function Analyzer</h1>
-      <p>
-        Submit a series of pitch-class sets (strings or integers mod 12) to call the backend
-        <code>analyze</code> endpoint. The request is made directly from your browser, so ensure the
-        server is reachable (CORS enabled).
-      </p>
-
-      <form onSubmit={handleSubmit}>
-        <div className="field">
-          <label htmlFor="server">Server URL</label>
-          <input
-            id="server"
-            type="url"
-            required
-            value={serverUrl}
-            onChange={(event) => setServerUrl(event.target.value)}
-            placeholder="http://localhost:8080"
-            autoComplete="off"
-          />
-        </div>
-
-        <div className="field">
-          <label htmlFor="preset">Preset</label>
-          <select
-            id="preset"
-            value={preset}
-            onChange={(event) => setPreset(event.target.value as AnalysisPreset)}
-          >
-            {PRESET_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="field">
-          <label htmlFor="progression">Progression (JSON array of pitch-class arrays)</label>
-          <textarea
-            id="progression"
-            value={progressionText}
-            onChange={(event) => setProgressionText(event.target.value)}
-            spellCheck={false}
-          />
-          <small>
-            Strings are treated as chromatic names (&ldquo;C#&rdquo;, &ldquo;Bb&rdquo;), numbers as
-            mod-12 pitch classes.
-          </small>
-        </div>
-
-        <div className="actions">
-          <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Analyzing…" : "Analyze progression"}
-          </button>
-          {isSubmitting && (
-            <button
-              type="button"
-              className="cancel-button"
-              onClick={() => {
-                controllerRef.current?.abort();
-              }}
-            >
-              Cancel request
-            </button>
-          )}
-          {status && <span className="status success">{status}</span>}
-          {error && <span className="status error">{error}</span>}
-        </div>
-      </form>
-
-      {response && (
-        <div className="field">
-          <label>Response</label>
-          <pre>{JSON.stringify(response, null, 2)}</pre>
-        </div>
-      )}
-
-      <section>
-        <h2>Tonnetz Tiling Explorer</h2>
-        <p>
-          Render the Ammann–Beekner tiling for a chosen interval set and diatonic degree. The backend
-          provides pitch assignments for each lattice vertex; click or drag across polygons to hear the
-          corresponding chords.
-        </p>
-        <TonnetzWidget serverUrl={serverUrl} />
-      </section>
-
-      <hr className="divider" />
-
-      <section>
-        <h2>Voice-Leading Fretting Optimizer</h2>
-        <p>
-          Submit a tuning and a list of pitch-class sets to call the <code>voice-leading</code>{" "}
-          endpoint. The response is rendered as a sequence of interactive fretboard diagrams using{" "}
-          <a href="https://moonwave99.github.io/fretboard.js/documentation-fretboard.html">Fretboard.js</a>.
-        </p>
-        <p className="hint">
-          Try the Mozart example progression (same as the analyzer above) to see a sample fretboard
-          layout.
-        </p>
-
-        <form onSubmit={handleVoiceLeadingSubmit}>
-          <div className="field">
-            <label htmlFor="vl-tuning">Tuning (JSON array)</label>
-            <input
-              id="vl-tuning"
-              value={voiceTuningText}
-              onChange={(event) => setVoiceTuningText(event.target.value)}
-              spellCheck={false}
-            />
-          </div>
-
-          <div className="field">
-            <label htmlFor="vl-progression">Progression (JSON array of pitch-class arrays)</label>
-            <textarea
-              id="vl-progression"
-              value={voiceProgressionText}
-              onChange={(event) => setVoiceProgressionText(event.target.value)}
-              spellCheck={false}
-            />
-          </div>
-
-        <div className="field">
-          <label htmlFor="vl-max">Max candidates per chord</label>
-          <input
-            id="vl-max"
-            type="number"
-              min={1}
-              value={voiceMaxCandidates}
-              onChange={(event) => setVoiceMaxCandidates(event.target.value)}
-            />
-            <small>
-              Controls how many candidate frettings are considered for each chord (defaults to 12).
-            </small>
-        </div>
-
-        <div className="field">
-          <label htmlFor="vl-overlays">Additional overlays (JSON)</label>
-          <textarea
-            id="vl-overlays"
-            value={overlayText}
-            onChange={(event) => setOverlayText(event.target.value)}
-            spellCheck={false}
-            placeholder='[
-  { "label": "Scale notes", "color": "#38bdf8", "notes": ["C", "D", "E", "F", "G", "A", "B"] }
-]'
-          />
-          <small>
-            Provide extra note sets or explicit positions to overlay. Each entry may include
-            <code>notes</code>, <code>color</code>, <code>label</code>, and <code>maxFret</code>.
-          </small>
-          {overlayParseError && <span className="status error">{overlayParseError}</span>}
-        </div>
-
-        <div className="actions">
-          <button type="submit" disabled={isVoiceSubmitting}>
-              {isVoiceSubmitting ? "Computing…" : "Optimize frettings"}
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => {
-    setVoiceTuningText(DEFAULT_TUNING);
-    setVoiceProgressionText(DEFAULT_PROGRESSION);
-    setVoiceTuningDisplay(normaliseTuningEntries(tuningStringList));
-              }}
-            >
-              Load Mozart example
-            </button>
-            {isVoiceSubmitting && (
-              <button
-                type="button"
-                className="cancel-button"
-                onClick={() => {
-                  voiceControllerRef.current?.abort();
-                }}
-              >
-              Cancel voice-leading
-            </button>
-          )}
-          {voiceStatus && <span className="status success">{voiceStatus}</span>}
-          {voiceError && <span className="status error">{voiceError}</span>}
-        </div>
-        <div className="actions">
-          <button
-            type="button"
-            onClick={runMozartDemo}
-            disabled={isDemoRunning || isVoiceSubmitting}
-          >
-            {isDemoRunning ? "Running demo…" : "Run Mozart demo"}
-          </button>
-        </div>
-      </form>
-
-      {voiceResponse && (
-        <VoiceLeadingResult
-          response={voiceResponse}
-            tuning={voiceTuningDisplay}
-            analysisSteps={response?.steps}
-            customOverlays={customOverlays}
-            serverUrl={serverUrl}
-          />
-        )}
-      </section>
-    </div>
-  );
-}
-
-type VoiceLeadingResultProps = {
-  response: VoiceLeadingResponse;
-  tuning: string[];
-  analysisSteps?: HarmonicStepResponse[];
-  customOverlays?: FretboardOverlaySet[];
-  serverUrl: string;
-};
-
-function VoiceLeadingResult({ response, tuning, analysisSteps, customOverlays, serverUrl }: VoiceLeadingResultProps) {
-  const steps = Array.isArray(response?.steps) ? response.steps : [];
   const scaleCacheRef = useRef<Map<string, ScaleNotesResponsePayload>>(new Map());
-  const [, setScaleCacheVersion] = useState(0);
+  const [, forceScaleCacheUpdate] = useState(0);
+
+  const analysisAbortRef = useRef<AbortController | null>(null);
+  const voiceAbortRef = useRef<AbortController | null>(null);
+
+  const handleRecordedStack = useCallback(
+    ({ chords, progression }: { chords: RecordedChord[]; progression: number[][] }) => {
+      setRecordedChords(chords);
+      setProgression(progression);
+    },
+    []
+  );
 
   useEffect(() => {
-    if (!serverUrl || !analysisSteps) {
+    return () => {
+      analysisAbortRef.current?.abort();
+      voiceAbortRef.current?.abort();
+    };
+  }, []);
+
+  const progressionSignature = useMemo(() => JSON.stringify(progression), [progression]);
+  const tuningSignature = useMemo(() => JSON.stringify(selectedTuning.strings), [selectedTuning]);
+
+  useEffect(() => {
+    if (isRecording) {
       return;
     }
+    const trimmedServer = serverUrl.trim();
+    if (progression.length === 0) {
+      analysisAbortRef.current?.abort();
+      setAnalysis(null);
+      setAnalysisState("idle");
+      setAnalysisError(null);
+      return;
+    }
+    if (!trimmedServer) {
+      setAnalysis(null);
+      setAnalysisState("error");
+      setAnalysisError("Server URL is required to analyze the recorded stack.");
+      return;
+    }
+    const controller = new AbortController();
+    analysisAbortRef.current?.abort();
+    analysisAbortRef.current = controller;
+    setAnalysisState("loading");
+    setAnalysisError(null);
+    const endpoint = `${normaliseUrl(trimmedServer)}/analyze`;
+    fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        preset,
+        progression
+      }),
+      signal: controller.signal
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const detail = await response.json().catch(() => ({}));
+          const message =
+            (detail && typeof detail.error === "string" && detail.error) ||
+            `${response.status} ${response.statusText}`;
+          throw new Error(message);
+        }
+        return (await response.json()) as AnalyzeResponse;
+      })
+      .then((data) => {
+        setAnalysis(data);
+        setAnalysisState("success");
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setAnalysis(null);
+        setAnalysisState("error");
+        setAnalysisError(error instanceof Error ? error.message : "Unable to analyze progression.");
+      });
+    return () => controller.abort();
+  }, [progressionSignature, preset, serverUrl, isRecording]);
 
+  useEffect(() => {
+    if (isRecording) {
+      return;
+    }
+    const trimmedServer = serverUrl.trim();
+    if (progression.length === 0) {
+      voiceAbortRef.current?.abort();
+      setVoiceLeading(null);
+      setVoiceState("idle");
+      setVoiceError(null);
+      return;
+    }
+    if (!trimmedServer) {
+      setVoiceLeading(null);
+      setVoiceState("error");
+      setVoiceError("Server URL is required to compute voice-leading.");
+      return;
+    }
+    const controller = new AbortController();
+    voiceAbortRef.current?.abort();
+    voiceAbortRef.current = controller;
+    setVoiceState("loading");
+    setVoiceError(null);
+    const endpoint = `${normaliseUrl(trimmedServer)}/voice-leading`;
+    const serializedTuning = selectedTuning.strings.map(serializeTuningValue);
+    fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        tuning: serializedTuning,
+        progression,
+        maxCandidates: 12
+      }),
+      signal: controller.signal
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const detail = await response.json().catch(() => ({}));
+          const message =
+            (detail && typeof detail.error === "string" && detail.error) ||
+            `${response.status} ${response.statusText}`;
+          throw new Error(message);
+        }
+        return (await response.json()) as VoiceLeadingResponse;
+      })
+      .then((data) => {
+        setVoiceLeading(data);
+        setVoiceState("success");
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setVoiceLeading(null);
+        setVoiceState("error");
+        setVoiceError(error instanceof Error ? error.message : "Unable to compute voice-leading.");
+      });
+    return () => controller.abort();
+  }, [progressionSignature, tuningSignature, serverUrl, isRecording, selectedTuning]);
+
+  useEffect(() => {
+    if (isRecording) {
+      return;
+    }
+    const steps = analysis?.steps ?? [];
+    if (steps.length === 0) {
+      return;
+    }
+    const trimmedServer = serverUrl.trim();
+    if (!trimmedServer) {
+      return;
+    }
     const pending: Array<{ key: string; mode: string; tonic: number }> = [];
-    analysisSteps.forEach((step) => {
-      const modeName = step.mode;
-      const tonicValue = step.tonality;
-      const key = `${modeName}:${tonicValue}`;
-      const hasScale = Array.isArray(step.scalePitchClassNames) && step.scalePitchClassNames.length > 0;
-      if (!hasScale && !scaleCacheRef.current.has(key) && !pending.some((item) => item.key === key)) {
-        pending.push({ key, mode: modeName, tonic: tonicValue });
+    steps.forEach((step) => {
+      const mode = step.mode;
+      const tonic = step.tonality;
+      if (typeof mode !== "string" || mode.trim().length === 0) {
+        return;
+      }
+      if (typeof tonic !== "number") {
+        return;
+      }
+      const key = `${mode}:${tonic}`;
+      if (!scaleCacheRef.current.has(key)) {
+        pending.push({ key, mode, tonic });
       }
     });
-
     if (pending.length === 0) {
       return;
     }
-
     const controller = new AbortController();
     (async () => {
       try {
         const results = await Promise.all(
-          pending.map((request) => fetchScaleNotes(serverUrl, request.mode, request.tonic, controller.signal))
+          pending.map((request) =>
+            fetchScaleNotes(trimmedServer, request.mode, request.tonic, controller.signal)
+          )
         );
         let updated = false;
         results.forEach((payload, index) => {
           const request = pending[index];
-          if (!scaleCacheRef.current.has(request.key)) {
+          if (request && !scaleCacheRef.current.has(request.key)) {
             scaleCacheRef.current.set(request.key, payload);
             updated = true;
           }
         });
         if (updated) {
-          setScaleCacheVersion((value) => value + 1);
+          forceScaleCacheUpdate((value) => value + 1);
         }
-      } catch (err) {
-        if (!(err instanceof DOMException && err.name === "AbortError")) {
-          console.error("Failed to fetch scale notes", err);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("Failed to fetch scale overlays", error);
         }
       }
     })();
-
     return () => controller.abort();
-  }, [analysisSteps, serverUrl, setScaleCacheVersion]);
+  }, [analysis, serverUrl, isRecording, forceScaleCacheUpdate]);
 
-  if (steps.length === 0) {
-    return (
-      <div className="voice-results">
-        <div className="voice-summary">
-          No frettings returned by the server for the supplied progression.
-        </div>
-      </div>
+  const combinedRows = useMemo(() => {
+    const length = Math.max(
+      progression.length,
+      analysis?.steps?.length ?? 0,
+      voiceLeading?.steps?.length ?? 0,
+      recordedChords.length
     );
-  }
+    return Array.from({ length }, (_, index) => ({
+      analysis: analysis?.steps?.[index] ?? null,
+      voice: voiceLeading?.steps?.[index] ?? null,
+      recorded: recordedChords[index] ?? null,
+      pitchClasses: progression[index] ?? []
+    }));
+  }, [analysis, voiceLeading, progression, recordedChords]);
+
+  const showResults = progression.length > 0 && !isRecording;
 
   return (
-    <div className="voice-results">
-      <div className="voice-summary">
-        <strong>Total cost:</strong> {response.totalCost}
-      </div>
-      <div className="voice-steps">
-        {steps.map((step, idx) => {
-          const pitchNames = Array.isArray(step.pitchClassNames)
-            ? step.pitchClassNames
-            : [];
-          const analysisStep = analysisSteps?.[idx];
-          const modeName = analysisStep?.mode;
-          const tonicValue = analysisStep?.tonality;
-          const resolvedModeKey = resolveModeKey(modeName);
-          const tonicPitchClass = typeof tonicValue === "number" ? normalizePitchClass(tonicValue) : null;
-          const computedIntervals = resolvedModeKey ? MODE_INTERVALS[resolvedModeKey] : undefined;
-          const computedScalePitchClasses =
-            tonicPitchClass !== null && computedIntervals
-              ? computedIntervals.map((interval) => normalizePitchClass(tonicPitchClass + interval))
-              : undefined;
-          const cacheKey = modeName != null && tonicValue != null ? `${modeName}:${tonicValue}` : null;
-          const cachedScaleInfo = cacheKey ? scaleCacheRef.current.get(cacheKey) : undefined;
-          const cachedScaleNotes = cachedScaleInfo?.pitchClassNames ?? [];
-          const cachedScaleNumbers = cachedScaleInfo?.pitchClasses
-            ? cachedScaleInfo.pitchClasses.map((value) => normalizePitchClass(Number(value)))
-            : [];
-          const scaleNotes =
-            analysisStep?.scalePitchClassNames && analysisStep.scalePitchClassNames.length > 0
-              ? analysisStep.scalePitchClassNames
-              : cachedScaleNotes;
-          const scalePitchClassesRaw = Array.isArray(analysisStep?.scalePitchClasses)
-            ? analysisStep!.scalePitchClasses!.map((value) => normalizePitchClass(Number(value)))
-            : undefined;
-          const scalePitchClasses = scalePitchClassesRaw && scalePitchClassesRaw.length > 0
-            ? scalePitchClassesRaw
-            : computedScalePitchClasses && computedScalePitchClasses.length > 0
-              ? computedScalePitchClasses
-              : cachedScaleNumbers;
-          const scalePitchClassNames =
-            analysisStep?.scalePitchClassNames && analysisStep.scalePitchClassNames.length > 0
-              ? analysisStep.scalePitchClassNames
-              : computedScalePitchClasses
-              ? computedScalePitchClasses.map((pc) => CHROMATIC_NAMES[pc] ?? String(pc))
-              : scaleNotes.length > 0
-              ? scaleNotes
-              : cachedScaleNotes;
-          const scaleDeviationPitchClassesRaw = Array.isArray(analysisStep?.scaleDeviationPitchClasses)
-            ? analysisStep!.scaleDeviationPitchClasses!.map((value) => normalizePitchClass(Number(value)))
-            : cachedScaleInfo?.diffPitchClasses
-            ? cachedScaleInfo.diffPitchClasses.map((value) => normalizePitchClass(Number(value)))
-            : [];
-          const scaleDeviationPitchClasses = Array.from(
-            new Set(scaleDeviationPitchClassesRaw.map((value) => normalizePitchClass(Number(value))))
-          ).sort((a, b) => a - b);
-          const scaleDeviationNames =
-            analysisStep?.scaleDeviationPitchClassNames && analysisStep.scaleDeviationPitchClassNames.length > 0
-              ? analysisStep.scaleDeviationPitchClassNames
-              : cachedScaleInfo?.diffPitchClassNames && cachedScaleInfo.diffPitchClassNames.length > 0
-              ? cachedScaleInfo.diffPitchClassNames
-              : scaleDeviationPitchClasses.map((pc) => CHROMATIC_NAMES[pc] ?? String(pc));
-          const tonalityPc = typeof step.tonality === "number" ? ((step.tonality % 12) + 12) % 12 : undefined;
-          let resolvedRoot: string | undefined;
-          if (
-            tonalityPc !== undefined &&
-            Array.isArray(scalePitchClasses) &&
-            Array.isArray(scalePitchClassNames)
-          ) {
-            const idx = scalePitchClasses.findIndex((value) => ((value % 12) + 12) % 12 === tonalityPc);
-            if (idx >= 0 && typeof scalePitchClassNames[idx] === "string") {
-              resolvedRoot = scalePitchClassNames[idx];
-            }
-          }
-          if (!resolvedRoot && Array.isArray(scaleNotes) && scaleNotes.length > 0) {
-            resolvedRoot = scaleNotes[0];
-          }
-
-          const scaleLabel =
-            resolvedRoot
-              ? analysisStep?.mode
-                ? `${resolvedRoot} ${analysisStep.mode}`
-                : `${resolvedRoot} scale`
-              : analysisStep?.key ?? (analysisStep?.mode ?? "Scale");
-
-          const baseOverlays: FretboardOverlaySet[] = [];
-
-          let scaleOverlay: FretboardOverlaySet | null = null;
-          if (scaleNotes.length > 0) {
-            scaleOverlay = {
-              id: `scale-${step.index}`,
-              notes: scaleNotes,
-              label: scaleLabel,
-              scaleMode: analysisStep?.mode,
-              scaleRoot: resolvedRoot,
-              pitchClassNumbers: scalePitchClasses
-            };
-            console.debug("scale overlay", {
-              chordIndex: step.index,
-              scalePitchClasses,
-              scalePitchClassNames,
-              scaleNotes,
-              scaleLabel
-            });
-            baseOverlays.push(scaleOverlay);
-          }
-
-          if (scaleDeviationPitchClasses.length > 0) {
-            const scaleDiffOverlay: FretboardOverlaySet = {
-              id: `scale-diff-${step.index}`,
-              notes: scaleDeviationNames,
-              color: "transparent",
-              pitchClassNumbers: scaleDeviationPitchClasses,
-              useOutline: true,
-              outlineColor: DEFAULT_SCALE_DIFF_OUTLINE_COLOR,
-              strokeWidth: DEFAULT_SCALE_DIFF_STROKE_WIDTH,
-              scaleMode: analysisStep?.mode,
-              scaleRoot: resolvedRoot
-            } satisfies FretboardOverlaySet;
-            console.debug("scale diff overlay", {
-              chordIndex: step.index,
-              scaleDeviationPitchClasses,
-              scaleDeviationNames
-            });
-            baseOverlays.push(scaleDiffOverlay);
-          }
-
-          const chordOverlay: FretboardOverlaySet = {
-            id: `chord-${step.index}`,
-            positions: step.positions,
-            color: DEFAULT_CHORD_COLOR,
-            label: "Chord"
-          };
-          baseOverlays.push(chordOverlay);
-
-          const overlaysWithCustom: FretboardOverlaySet[] = baseOverlays.concat(
-            (customOverlays ?? []).map((overlay, overlayIdx) => ({
-              ...overlay,
-              id: `${overlay.id}-${step.index}-${overlayIdx}`
-            }))
-          );
-
-          return (
-            <div key={step.index} className="voice-step">
-              <div className="voice-step-header">
-                <h3>Chord {step.index + 1}</h3>
-                <div className="voice-metrics">
-                  <span>Difficulty: {step.difficulty}</span>
-                  <span>Transition: {step.transitionCost}</span>
-                </div>
-              </div>
-              <div className="voice-meta">
+    <div className="integrated-app">
+      <header className="integrated-header">
+        <div className="integrated-title">
+          <h1>Harmonic Lab Console</h1>
+          <p>Record Tonnetz gestures, inspect harmonic function, and visualise frettings in one view.</p>
+        </div>
+        <div className="integrated-controls">
+          <label className="integrated-control">
+            <span>Server URL</span>
+            <input
+              type="url"
+              value={serverUrl}
+              onChange={(event) => setServerUrl(event.target.value)}
+              placeholder="http://localhost:8080"
+              spellCheck={false}
+            />
+          </label>
+          <label className="integrated-control">
+            <span>Analysis Preset</span>
+            <select value={preset} onChange={(event) => setPreset(event.target.value as AnalysisPreset)}>
+              {PRESET_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="integrated-control">
+            <span>Instrument Tuning</span>
+            <select value={selectedTuningId} onChange={(event) => setSelectedTuningId(event.target.value)}>
+              {TUNING_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </header>
+      <div className="integrated-body">
+        <section className="integrated-column integrated-column--left">
+          <TonnetzWidget
+            serverUrl={serverUrl}
+            onRecordedStack={handleRecordedStack}
+            onRecordingStateChange={setIsRecording}
+            onLoopEvent={({ index, active }) => {
+              setActiveLoopIndex((current) => (active ? index : current === index ? null : current));
+            }}
+          />
+          {!isRecording && progression.length > 0 && (
+            <div className="integrated-stack-summary">
+              <h3>Recorded Stack</h3>
+              <div className="stack-details">
                 <div>
-                  <strong>Pitch classes:</strong>
-                  {pitchNames.length > 0 ? ` ${pitchNames.join(", ")}` : " —"}
+                  <strong>Chord count:</strong> {recordedChords.length}
                 </div>
-                {scaleOverlay && (
-                  <div>
-                    <strong>Scale:</strong>{" "}
-                    {scaleOverlay.scaleRoot ? `${scaleOverlay.scaleRoot} ` : ""}
-                    {scaleOverlay.scaleMode ?? scaleLabel}
-                  </div>
-                )}
+                <div>
+                  <strong>Most recent:</strong>{" "}
+                  {recordedChords.length > 0
+                    ? (recordedChords[recordedChords.length - 1]?.noteNames ?? []).join(", ") ||
+                      (recordedChords[recordedChords.length - 1]?.pitchClassNames ?? []).join(" ")
+                    : "—"}
+                </div>
               </div>
-              <FretboardOverlay tuning={tuning} overlays={overlaysWithCustom} serverUrl={serverUrl} />
             </div>
-          );
-        })}
+          )}
+        </section>
+        {showResults && (
+          <section className="integrated-column integrated-column--right">
+            <div className="results-header">
+              <div>
+                <h2>Recorded Progression</h2>
+                <p>Harmonic context and instrument layouts for each captured chord.</p>
+              </div>
+              <div className="results-meta">
+                <span>{selectedTuning.strings.join(" • ")}</span>
+              </div>
+            </div>
+            {analysisState === "loading" && <div className="status info">Analyzing recorded stack…</div>}
+            {analysisState === "error" && analysisError && <div className="status error">{analysisError}</div>}
+            {voiceState === "loading" && <div className="status info">Computing voice-leading layouts…</div>}
+            {voiceState === "error" && voiceError && <div className="status error">{voiceError}</div>}
+            <div className="progression-grid">
+              {combinedRows.map((row, index) => {
+                const analysisStep = row.analysis;
+                const voiceStep = row.voice;
+                const recorded = row.recorded;
+                const chordLabel =
+                  analysisStep?.pitchClassNames?.join(" ") ||
+                  recorded?.noteNames?.join(", ") ||
+                  recorded?.pitchClassNames?.join(" ") ||
+                  row.pitchClasses.map((pc) => CHROMATIC_NAMES[normalisePitchClass(pc)] ?? String(pc)).join(" ");
+
+                const overlays: FretboardOverlaySet[] = [];
+
+                if (analysisStep) {
+                  const modeName = analysisStep.mode;
+                  const tonicValue = analysisStep.tonality;
+                  const resolvedModeKey = resolveModeKey(modeName);
+                  const tonicPitchClass =
+                    typeof tonicValue === "number" ? normalisePitchClass(Number(tonicValue)) : null;
+                  const computedIntervals = resolvedModeKey ? MODE_INTERVALS[resolvedModeKey] : undefined;
+                  const computedScalePitchClasses =
+                    tonicPitchClass !== null && computedIntervals
+                      ? computedIntervals.map((interval) => normalisePitchClass(tonicPitchClass + interval))
+                      : undefined;
+                  const cacheKey =
+                    typeof modeName === "string" && typeof tonicValue === "number"
+                      ? `${modeName}:${tonicValue}`
+                      : null;
+                  const cachedScaleInfo = cacheKey ? scaleCacheRef.current.get(cacheKey) : undefined;
+                  const cachedScaleNotes = cachedScaleInfo?.pitchClassNames ?? [];
+                  const cachedScaleNumbers = cachedScaleInfo?.pitchClasses
+                    ? cachedScaleInfo.pitchClasses.map((value) => normalisePitchClass(Number(value)))
+                    : [];
+
+                  const scaleNotes =
+                    analysisStep.scalePitchClassNames && analysisStep.scalePitchClassNames.length > 0
+                      ? analysisStep.scalePitchClassNames
+                      : cachedScaleNotes;
+
+                  const scalePitchClassesRaw = Array.isArray(analysisStep.scalePitchClasses)
+                    ? analysisStep.scalePitchClasses.map((value) => normalisePitchClass(Number(value)))
+                    : undefined;
+                  const scalePitchClasses =
+                    scalePitchClassesRaw && scalePitchClassesRaw.length > 0
+                      ? scalePitchClassesRaw
+                      : computedScalePitchClasses && computedScalePitchClasses.length > 0
+                        ? computedScalePitchClasses
+                        : cachedScaleNumbers;
+
+                  const fallbackScaleNames =
+                    scalePitchClasses.length > 0
+                      ? scalePitchClasses.map((pc) => CHROMATIC_NAMES[pc] ?? String(pc))
+                      : [];
+                  const scalePitchClassNames =
+                    analysisStep.scalePitchClassNames && analysisStep.scalePitchClassNames.length > 0
+                      ? analysisStep.scalePitchClassNames
+                      : fallbackScaleNames.length > 0
+                        ? fallbackScaleNames
+                        : scaleNotes;
+
+                  const deviationRaw = Array.isArray(analysisStep.scaleDeviationPitchClasses)
+                    ? analysisStep.scaleDeviationPitchClasses.map((value) => normalisePitchClass(Number(value)))
+                    : cachedScaleInfo?.diffPitchClasses
+                    ? cachedScaleInfo.diffPitchClasses.map((value) => normalisePitchClass(Number(value)))
+                    : [];
+                  const scaleDeviationPitchClasses = Array.from(new Set(deviationRaw)).sort(
+                    (a, b) => a - b
+                  );
+                  const scaleDeviationNames =
+                    analysisStep.scaleDeviationPitchClassNames &&
+                    analysisStep.scaleDeviationPitchClassNames.length > 0
+                      ? analysisStep.scaleDeviationPitchClassNames
+                      : cachedScaleInfo?.diffPitchClassNames && cachedScaleInfo.diffPitchClassNames.length > 0
+                        ? cachedScaleInfo.diffPitchClassNames
+                        : scaleDeviationPitchClasses.map((pc) => CHROMATIC_NAMES[pc] ?? String(pc));
+
+                  let resolvedRoot: string | undefined;
+                  if (tonicPitchClass !== null && scalePitchClasses.length > 0) {
+                    const idx = scalePitchClasses.findIndex((value) => value === tonicPitchClass);
+                    if (idx >= 0 && scalePitchClassNames[idx]) {
+                      resolvedRoot = scalePitchClassNames[idx];
+                    }
+                  }
+                  if (!resolvedRoot && scalePitchClassNames.length > 0) {
+                    resolvedRoot = scalePitchClassNames[0];
+                  }
+                  if (!resolvedRoot && scaleNotes.length > 0) {
+                    resolvedRoot = scaleNotes[0];
+                  }
+
+                  const scaleLabel =
+                    resolvedRoot && analysisStep.mode
+                      ? `${resolvedRoot} ${analysisStep.mode}`
+                      : analysisStep.key || analysisStep.mode || "Scale";
+
+                  if (scalePitchClassNames.length > 0) {
+                    overlays.push({
+                      id: `scale-${index}`,
+                      notes: scalePitchClassNames,
+                      label: scaleLabel,
+                      scaleMode: analysisStep.mode ?? undefined,
+                      scaleRoot: resolvedRoot,
+                      pitchClassNumbers: scalePitchClasses
+                    });
+                  }
+
+                  if (scaleDeviationPitchClasses.length > 0) {
+                    overlays.push({
+                      id: `scale-diff-${index}`,
+                      notes: scaleDeviationNames,
+                      color: "transparent",
+                      pitchClassNumbers: scaleDeviationPitchClasses,
+                      useOutline: true,
+                      outlineColor: DEFAULT_SCALE_DIFF_OUTLINE_COLOR,
+                      strokeWidth: DEFAULT_SCALE_DIFF_STROKE_WIDTH,
+                      scaleMode: analysisStep.mode ?? undefined,
+                      scaleRoot: resolvedRoot
+                    });
+                  }
+                }
+
+                if (voiceStep?.positions?.length) {
+                  overlays.push({
+                    id: `chord-${index}`,
+                    positions: voiceStep.positions,
+                    color: DEFAULT_CHORD_COLOR,
+                    label: "Chord"
+                  });
+                }
+
+                let diagramContent: JSX.Element;
+                if (overlays.length > 0) {
+                  diagramContent = (
+                    <FretboardOverlayDiagram
+                      tuning={selectedTuning.strings}
+                      overlays={overlays}
+                      serverUrl={serverUrl}
+                    />
+                  );
+                } else if (voiceState === "loading") {
+                  diagramContent = <div className="status info">Preparing fretboard layout…</div>;
+                } else {
+                  diagramContent = <div className="status">No fretboard voicing returned for this chord.</div>;
+                }
+
+                return (
+                  <div
+                    key={`progression-row-${index}`}
+                    className={
+                      activeLoopIndex === index
+                        ? "progression-row progression-row--active"
+                        : "progression-row"
+                    }
+                  >
+                    <div className="progression-row-info">
+                      <div className="progression-row-header">
+                        <span className="progression-row-index">{index + 1}</span>
+                        <div>
+                          <strong>{chordLabel || "Chord"}</strong>
+                          {analysisStep?.function && (
+                            <span className="progression-row-subtitle">{analysisStep.function}</span>
+                          )}
+                        </div>
+                      </div>
+                      <dl className="progression-row-details">
+                        {[
+                          {
+                            key: "chord",
+                            label: "Chord",
+                            value: chordLabel || "—"
+                          },
+                          {
+                            key: "degree",
+                            label: "Degree",
+                            value: analysisStep?.degree || "—"
+                          },
+                          {
+                            key: "key",
+                            label: "Key",
+                            value: analysisStep?.key || "—"
+                          },
+                          {
+                            key: "roman",
+                            label: "Roman Numeral",
+                            value: analysisStep?.romanNumeral || "—"
+                          }
+                        ].map((entry) => (
+                          <Fragment key={`${index}-${entry.key}`}>
+                            <dt className="analysis-label">{entry.label}</dt>
+                            <dd>{entry.value}</dd>
+                          </Fragment>
+                        ))}
+                      </dl>
+                    </div>
+                    <div className="progression-row-diagram">{diagramContent}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );
-}
-
-type FretboardOverlayProps = {
-  tuning: string[];
-  overlays: FretboardOverlaySet[];
-  serverUrl: string;
-};
-
-function FretboardOverlay({ tuning, overlays, serverUrl }: FretboardOverlayProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [backendMarkers, setBackendMarkers] = useState<OverlayMarker[]>([]);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [isLoading, setLoading] = useState<boolean>(false);
-  const lastRequestRef = useRef<string | null>(null);
-  const [chordNames, setChordNames] = useState<Record<string, BackendChordNameEntry>>({});
-  const [chordNameError, setChordNameError] = useState<string | null>(null);
-  const [isChordLoading, setChordLoading] = useState<boolean>(false);
-  const chordRequestRef = useRef<string | null>(null);
-
-  const noteSetOverlays = useMemo(
-    () =>
-      overlays.filter(
-        (overlay) =>
-          (Array.isArray(overlay.notes) && overlay.notes.length > 0) ||
-          (Array.isArray(overlay.pitchClassNumbers) && overlay.pitchClassNumbers.length > 0)
-      ),
-    [overlays]
-  );
-
-  const primaryScaleOverlay = useMemo(
-    () => overlays.find((overlay) => overlay.scaleMode || overlay.scaleRoot),
-    [overlays]
-  );
-
-  const scaleDescriptor = useMemo(() => {
-    if (!primaryScaleOverlay) {
-      return null;
-    }
-    const parts: string[] = [];
-    if (primaryScaleOverlay.scaleRoot) {
-      parts.push(primaryScaleOverlay.scaleRoot);
-    }
-    if (primaryScaleOverlay.scaleMode) {
-      parts.push(primaryScaleOverlay.scaleMode);
-    } else if (primaryScaleOverlay.label) {
-      parts.push(primaryScaleOverlay.label);
-    }
-    const descriptor = parts.join(" ").trim();
-    return descriptor.length > 0 ? descriptor : null;
-  }, [primaryScaleOverlay]);
-
-  const serializedTuning = useMemo<SerializedTuningEntry[]>(
-    () => tuning.map((value) => serializeTuningValue(value)),
-    [tuning]
-  );
-
-  const tuningSignature = useMemo(() => JSON.stringify(serializedTuning), [serializedTuning]);
-
-  const noteSetPayload = useMemo(
-    () =>
-      noteSetOverlays.map((overlay) => {
-        const base: Record<string, unknown> = {
-          id: overlay.id,
-          label: overlay.label ?? null
-        };
-        if (overlay.pitchClassNumbers && overlay.pitchClassNumbers.length > 0) {
-          const uniquePitchClasses = Array.from(
-            new Set(overlay.pitchClassNumbers.map((value) => normalizePitchClass(Number(value))))
-          ).sort((a, b) => a - b);
-          base.pitchClasses = uniquePitchClasses;
-        } else {
-          base.pitchClasses = overlay.notes ?? [];
-        }
-        if (overlay.scaleRoot) {
-          base.tonic = overlay.scaleRoot;
-        }
-        if (overlay.scaleMode) {
-          base.mode = overlay.scaleMode;
-        }
-        return base;
-      }),
-    [noteSetOverlays]
-  );
-
-  const noteSetSignature = useMemo(() => JSON.stringify(noteSetPayload), [noteSetPayload]);
-
-  const overlaySignature = useMemo(
-    () =>
-      JSON.stringify(
-        overlays.map((overlay) => ({
-          id: overlay.id,
-          color: overlay.color ?? null,
-          label: overlay.label ?? null,
-          maxFret: overlay.maxFret ?? null,
-          scaleMode: overlay.scaleMode ?? null,
-          scaleRoot: overlay.scaleRoot ?? null,
-          pitchClassNumbers: overlay.pitchClassNumbers ?? null,
-          useOutline: overlay.useOutline ?? false,
-          outlineColor: overlay.outlineColor ?? null,
-          strokeWidth: overlay.strokeWidth ?? null,
-          notesLength: overlay.notes?.length ?? 0,
-          positionsLength: overlay.positions?.length ?? 0
-        }))
-      ),
-    [overlays]
-  );
-
-  useEffect(() => {
-    if (!serverUrl || noteSetPayload.length === 0) {
-      setChordNames({});
-      setChordNameError(null);
-      setChordLoading(false);
-      chordRequestRef.current = null;
-      return;
-    }
-
-    const controller = new AbortController();
-    const endpointBase = normaliseUrl(serverUrl);
-    const requestBody = {
-      noteSets: noteSetPayload
-    };
-
-    const signature = JSON.stringify({ server: endpointBase, requestBody });
-    if (signature === chordRequestRef.current) {
-      return () => controller.abort();
-    }
-    chordRequestRef.current = signature;
-
-    const fetchChordNames = async () => {
-      try {
-        setChordLoading(true);
-        setChordNameError(null);
-        const response = await fetch(`${endpointBase}/fretboard/chord-names`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal
-        });
-
-        if (!response.ok) {
-          const detail = await response.json().catch(() => ({}));
-          const errMessage =
-            (detail && typeof detail.error === "string" && detail.error) ||
-            `${response.status} ${response.statusText}`;
-          throw new Error(errMessage);
-        }
-
-        const payload = (await response.json()) as FretboardChordNamesResponsePayload;
-        const map: Record<string, BackendChordNameEntry> = {};
-        for (const entry of payload.chordNames ?? []) {
-          if (entry && typeof entry.id === "string") {
-            map[entry.id] = entry;
-          }
-        }
-        setChordNames(map);
-        setChordLoading(false);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          setChordLoading(false);
-          chordRequestRef.current = null;
-          return;
-        }
-        setChordNames({});
-        setChordLoading(false);
-        chordRequestRef.current = null;
-        setChordNameError(err instanceof Error ? err.message : "Unable to resolve chord names.");
-      }
-    };
-
-    fetchChordNames();
-    return () => {
-      controller.abort();
-      setChordLoading(false);
-      chordRequestRef.current = null;
-    };
-  }, [serverUrl, noteSetSignature, noteSetPayload]);
-
-  const chordOverlayNames = useMemo(
-    () =>
-      noteSetOverlays
-        .filter((overlay) => overlay.id.startsWith("chord-"))
-        .map((overlay) => chordNames[overlay.id]?.name)
-        .filter((value): value is string => typeof value === "string" && value.trim().length > 0),
-    [noteSetOverlays, chordNames]
-  );
-
-  const directMarkers = useMemo(() => {
-    return overlays.flatMap((overlay) => {
-      if (overlay.positions && overlay.positions.length > 0) {
-        return buildMarkersForPositions(tuning, overlay.positions, overlay.id, overlay.color);
-      }
-      return [];
-    });
-  }, [overlays, tuning]);
-
-  const maxFret = useMemo(() => {
-    const positionFrets = overlays.flatMap((overlay) =>
-      overlay.positions ? overlay.positions.map((position) => position.fret ?? 0) : []
-    );
-    const explicitLimits = overlays
-      .map((overlay) => overlay.maxFret)
-      .filter((value): value is number => typeof value === "number");
-    const candidates = [DEFAULT_FRET_COUNT, ...positionFrets, ...explicitLimits];
-    return Math.max(...candidates);
-  }, [overlays]);
-
-  useEffect(() => {
-    if (!serverUrl || noteSetPayload.length === 0) {
-      setBackendMarkers([]);
-      setFetchError(null);
-      setLoading(false);
-      lastRequestRef.current = null;
-      return;
-    }
-
-    const controller = new AbortController();
-    const endpointBase = normaliseUrl(serverUrl);
-    const requestBody = {
-      tuning: serializedTuning,
-      maxFrets: maxFret,
-      noteSets: noteSetPayload
-    };
-
-    const signature = JSON.stringify({ server: endpointBase, requestBody });
-    if (signature === lastRequestRef.current) {
-      return () => controller.abort();
-    }
-    lastRequestRef.current = signature;
-
-    const fetchOccurrences = async () => {
-      try {
-        setLoading(true);
-        setFetchError(null);
-        const response = await fetch(`${endpointBase}/fretboard/occurrences`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal
-        });
-
-        if (!response.ok) {
-          const detail = await response.json().catch(() => ({}));
-          const errMessage =
-            (detail && typeof detail.error === "string" && detail.error) ||
-            `${response.status} ${response.statusText}`;
-          throw new Error(errMessage);
-        }
-
-        const payload = (await response.json()) as FretboardOccurrencesResponsePayload;
-        const overlayMap = new Map(overlays.map((overlay) => [overlay.id, overlay]));
-        const isScaleOverlay = (overlayInfo: FretboardOverlaySet | undefined) =>
-          Boolean(overlayInfo?.scaleMode || overlayInfo?.scaleRoot);
-
-        const colorMapCache = new Map<string, Map<number, string>>();
-        const getViridisColor = (index: number) => VIRIDIS_COLORS[index % VIRIDIS_COLORS.length];
-        const createColorMap = (values: number[]) => {
-          const unique = Array.from(new Set(values.map((value) => ((value % 12) + 12) % 12)));
-          const map = new Map<number, string>();
-          unique.forEach((pitchClass, idx) => {
-            map.set(pitchClass, getViridisColor(idx));
-          });
-          return map;
-        };
-
-        const markersFromBackend = payload.noteSets.flatMap((noteSet) => {
-          const overlayInfo = overlayMap.get(noteSet.id);
-          const groupId = overlayInfo?.id ?? noteSet.id;
-          const baseColor = overlayInfo?.color;
-          const useViridis = isScaleOverlay(overlayInfo);
-          const useOutline = overlayInfo?.useOutline ?? false;
-          const outlineColor = overlayInfo?.outlineColor ?? baseColor ?? DEFAULT_SCALE_DIFF_OUTLINE_COLOR;
-          const strokeWidth = overlayInfo?.strokeWidth ?? DEFAULT_SCALE_DIFF_STROKE_WIDTH;
-          const chordInfo = chordNames[noteSet.id];
-          const chordNameCandidate =
-            chordInfo?.name && chordInfo.name.trim().length > 0
-              ? chordInfo.name
-              : chordInfo?.aliases?.find((alias) => alias && alias.trim().length > 0);
-          const overlayLabel =
-            overlayInfo?.label ??
-            (useOutline ? undefined : chordNameCandidate) ??
-            noteSet.label ??
-            undefined;
-          const colorLookup = (() => {
-            if (!useViridis) {
-              return undefined;
-            }
-            const cached = colorMapCache.get(noteSet.id);
-            if (cached) {
-              return cached;
-            }
-            const created = createColorMap(noteSet.pitchClasses ?? []);
-            colorMapCache.set(noteSet.id, created);
-            return created;
-          })();
-
-          return noteSet.occurrences.map((occurrence) => {
-            const stringNumber = mapBackendStringToFretboard(occurrence.string, tuning.length);
-            const pitchClass = ((occurrence.pitchClass % 12) + 12) % 12;
-            const assignedColor = useOutline
-              ? "transparent"
-              : colorLookup?.get(pitchClass) ?? baseColor;
-            const markerGroup = colorLookup && !useOutline ? `${groupId}-${pitchClass}` : groupId;
-            const markerLabel =
-              useViridis && (occurrence.noteName || occurrence.pitchClassName)
-                ? occurrence.noteName ?? occurrence.pitchClassName
-                : overlayLabel ?? occurrence.noteName ?? occurrence.pitchClassName;
-            return {
-              string: stringNumber,
-              fret: occurrence.fret,
-              label: markerLabel,
-              group: markerGroup,
-              color: assignedColor,
-              outlineColor: useOutline ? outlineColor : undefined,
-              strokeWidth: useOutline ? strokeWidth : undefined
-            } satisfies OverlayMarker;
-          });
-        });
-
-        setBackendMarkers(markersFromBackend);
-        setLoading(false);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          setLoading(false);
-          lastRequestRef.current = null;
-          return;
-        }
-        setBackendMarkers([]);
-        setLoading(false);
-        lastRequestRef.current = null;
-        setFetchError(err instanceof Error ? err.message : "Unable to load fretboard overlays.");
-      }
-    };
-
-    fetchOccurrences();
-    return () => {
-      controller.abort();
-      setLoading(false);
-      lastRequestRef.current = null;
-    };
-  }, [serverUrl, maxFret, overlaySignature, noteSetSignature, tuningSignature, chordNames]);
-
-  const markers = useMemo(
-    () => [...backendMarkers, ...directMarkers],
-    [backendMarkers, directMarkers]
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    let fretboardInstance: any = null;
-
-    async function renderFretboard() {
-      const module = await import("@moonwave99/fretboard.js");
-      if (cancelled || !containerRef.current) {
-        return;
-      }
-
-      const FretboardClass: any =
-        (module && "default" in module ? (module as { default: unknown }).default : undefined) ??
-        (module as { Fretboard?: unknown }).Fretboard ??
-        module;
-
-      if (typeof FretboardClass !== "function" || !containerRef.current) {
-        return;
-      }
-
-      containerRef.current.innerHTML = "";
-
-      fretboardInstance = new FretboardClass({
-        el: containerRef.current,
-        stringCount: tuning.length,
-        tuning,
-        fretCount: maxFret,
-        width: 420,
-        height: 200,
-        dotSize: 18,
-        dotTextSize: 11,
-        dotStrokeColor: "#1f2937",
-        dotFill: "#ffffff"
-      });
-
-      if (markers.length === 0) {
-        fretboardInstance.render([]);
-        return;
-      }
-
-      renderFretboardDots(fretboardInstance, markers);
-    }
-
-    renderFretboard().catch((err) => {
-      if (!cancelled) {
-        console.error("Failed to render fretboard diagram", err);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
-      }
-      if (typeof fretboardInstance?.clear === "function") {
-        fretboardInstance.clear();
-      }
-      fretboardInstance = null;
-    };
-  }, [markers, maxFret, tuning]);
-
-  const showMeta =
-    Boolean(scaleDescriptor) ||
-    chordOverlayNames.length > 0 ||
-    isChordLoading ||
-    chordNameError;
-
-  return (
-    <div className="fretboard-wrapper">
-      {showMeta && (
-        <div className="fretboard-meta">
-          {scaleDescriptor && (
-            <div>
-              <strong>Scale:</strong> {scaleDescriptor}
-            </div>
-          )}
-          {chordOverlayNames.length > 0 && (
-            <div>
-              <strong>Chord:</strong> {chordOverlayNames.join(", ")}
-            </div>
-          )}
-          {isChordLoading && chordOverlayNames.length === 0 && (
-            <div className="status">Identifying chord…</div>
-          )}
-          {chordNameError && <div className="status error">{chordNameError}</div>}
-        </div>
-      )}
-      {fetchError && <div className="status error">{fetchError}</div>}
-      {!fetchError && isLoading && <div className="status">Loading overlays…</div>}
-      <div className="fretboard-container" ref={containerRef} />
-    </div>
-  );
-}
-
-export default App;
-
-function mapBackendStringToFretboard(stringIndex: number, stringCount: number): number {
-  const candidate = stringCount - stringIndex;
-  return Math.max(1, Math.min(stringCount, candidate));
-}
-
-function renderFretboardDots(instance: any, markers: OverlayMarker[]) {
-  instance.setDots(markers).render();
-  instance.style({
-    filter: () => true,
-    text: (dot: OverlayMarker) => (dot.label ? String(dot.label) : "")
-  });
-
-  const groupStyles = new Map<string, { fill?: string; stroke?: string; strokeWidth?: number }>();
-  markers.forEach((marker) => {
-    if (!marker.group) {
-      return;
-    }
-    const existing = groupStyles.get(marker.group) ?? {};
-    if (marker.color !== undefined && existing.fill === undefined) {
-      existing.fill = marker.color;
-    }
-    if (marker.outlineColor !== undefined) {
-      existing.stroke = marker.outlineColor;
-    }
-    if (typeof marker.strokeWidth === "number") {
-      existing.strokeWidth = marker.strokeWidth;
-    }
-    groupStyles.set(marker.group, existing);
-  });
-
-  groupStyles.forEach((style, group) => {
-    const params: Record<string, unknown> = { filter: { group } };
-    if (style.fill !== undefined) {
-      params.fill = style.fill;
-    }
-    if (style.stroke !== undefined) {
-      params.stroke = style.stroke;
-      if (style.strokeWidth !== undefined) {
-        params["stroke-width"] = style.strokeWidth;
-      }
-    }
-    instance.style(params);
-  });
 }
 
 async function fetchScaleNotes(
@@ -1596,26 +831,35 @@ async function fetchScaleNotes(
   if (!serverUrl) {
     return empty;
   }
-  const response = await fetch(`${normaliseUrl(serverUrl)}/scale-notes`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ mode, tonic }),
-    signal
-  });
-  if (!response.ok) {
-    const detail = await response.json().catch(() => ({}));
-    const errMessage =
-      (detail && typeof detail.error === "string" && detail.error) ||
-      `${response.status} ${response.statusText}`;
-    throw new Error(errMessage);
+  try {
+    const response = await fetch(`${normaliseUrl(serverUrl)}/scale-notes`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ mode, tonic }),
+      signal
+    });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      const errMessage =
+        (detail && typeof detail.error === "string" && detail.error) ||
+        `${response.status} ${response.statusText}`;
+      throw new Error(errMessage);
+    }
+    const payload = (await response.json()) as ScaleNotesResponsePayload;
+    return {
+      pitchClasses: Array.isArray(payload.pitchClasses) ? payload.pitchClasses : [],
+      pitchClassNames: Array.isArray(payload.pitchClassNames) ? payload.pitchClassNames : [],
+      diffPitchClasses: Array.isArray(payload.diffPitchClasses) ? payload.diffPitchClasses : [],
+      diffPitchClassNames: Array.isArray(payload.diffPitchClassNames) ? payload.diffPitchClassNames : []
+    } satisfies ScaleNotesResponsePayload;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      return empty;
+    }
+    throw error;
   }
-  const payload = (await response.json()) as ScaleNotesResponsePayload;
-  return {
-    pitchClasses: Array.isArray(payload.pitchClasses) ? payload.pitchClasses : [],
-    pitchClassNames: Array.isArray(payload.pitchClassNames) ? payload.pitchClassNames : [],
-    diffPitchClasses: Array.isArray(payload.diffPitchClasses) ? payload.diffPitchClasses : [],
-    diffPitchClassNames: Array.isArray(payload.diffPitchClassNames) ? payload.diffPitchClassNames : []
-  } satisfies ScaleNotesResponsePayload;
 }
+
+export default App;

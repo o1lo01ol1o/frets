@@ -2,6 +2,7 @@ import * as d3 from "d3";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import JZZ, { type MidiOpenResult, type MidiOut } from "jzz";
 import TinyDefault, { Tiny as TinyNamed } from "jzz-synth-tiny";
+import PianoRollView from "./PianoRollView";
 
 const TinyInitializer = typeof TinyNamed === "function" ? TinyNamed : TinyDefault;
 
@@ -97,7 +98,7 @@ const midiToNoteName = (midi: number): string => {
 
 const clampMidi = (note: number): number => Math.max(0, Math.min(127, Math.round(note)));
 
-type RecordedChord = {
+export type RecordedChord = {
   id: string;
   midiNotes: number[];
   pitchClassNames: string[];
@@ -131,7 +132,7 @@ type RenderedChordEvent = {
   midiNotes: number[];
 };
 
-type RenderedPlaybackResponse = {
+export type RenderedPlaybackResponse = {
   midiBase64: string;
   totalSeconds: number;
   events: RenderedChordEvent[];
@@ -153,6 +154,23 @@ const QUANTIZATION_OPTIONS: Array<{ value: PlaybackQuantizationOption | "none"; 
 
 const DEFAULT_TEMPO_BPM = 120;
 
+const resolveDefaultStructure = (
+  structures: TonnetzStructureOptions[]
+): TonnetzStructureOptions | null => {
+  if (structures.length === 0) {
+    return null;
+  }
+  const byLabel = structures.find((structure) => /tetrad/i.test(structure.label));
+  if (byLabel) {
+    return byLabel;
+  }
+  const byId = structures.find((structure) => /tetrad/i.test(structure.id));
+  if (byId) {
+    return byId;
+  }
+  return structures[0] ?? null;
+};
+
 const coordinateKey = (coord: number[]): string => coord.join(",");
 
 const equalMidiSets = (a: number[] | null, b: number[]): boolean => {
@@ -165,6 +183,9 @@ const equalMidiSets = (a: number[] | null, b: number[]): boolean => {
 
 type TonnetzWidgetProps = {
   serverUrl: string;
+  onRecordedStack?: (payload: { chords: RecordedChord[]; progression: number[][] }) => void;
+  onRecordingStateChange?: (isRecording: boolean) => void;
+  onLoopEvent?: (payload: { index: number; active: boolean }) => void;
 };
 
 type VertexRenderDatum = {
@@ -186,7 +207,12 @@ const parseMeterValue = (beatsInput: string, unitInput: string): { beats: number
   return { beats, beatUnit };
 };
 
-export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
+export function TonnetzWidget({
+  serverUrl,
+  onRecordedStack,
+  onRecordingStateChange,
+  onLoopEvent
+}: TonnetzWidgetProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const optionsAbortRef = useRef<AbortController | null>(null);
@@ -198,6 +224,7 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
   const midiMixerOpenPromiseRef = useRef<Promise<MidiOut | null> | null>(null);
   const selectedMixerOutputRef = useRef<string>(AUTO_MIXER_SELECTION);
   const chordNameCacheRef = useRef<Map<string, ChordNameInfo>>(new Map());
+  const recordedChordsRef = useRef<RecordedChord[]>([]);
   const recordingStartRef = useRef<number | null>(null);
   const recordingEventsRef = useRef<RecordingEvent[]>([]);
   const activeChordRecordingRef = useRef<{ id: string; startedAt: number; notes: number[] } | null>(null);
@@ -223,6 +250,7 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
   const [intervalId, setIntervalId] = useState<string | null>(null);
   const [degree, setDegree] = useState<string>("I");
   const [transposeSemitones, setTransposeSemitones] = useState(0);
+  const [activeControlTab, setActiveControlTab] = useState<"structure" | "transpose" | "mixer" | "render">("structure");
   const [tiling, setTiling] = useState<TonnetzTilingResponse | null>(null);
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [loadingTiling, setLoadingTiling] = useState(false);
@@ -252,14 +280,80 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
     noteNames: string[];
     transpose: number;
   } | null>(null);
+  const [activeView, setActiveView] = useState<"tonnetz" | "piano-roll">("tonnetz");
+  const [loopProgress, setLoopProgress] = useState(0);
 
   const hasRecordedSession =
     lastRecordingRef.current != null && lastRecordingRef.current.length > 0;
-  const canPlayLoop = renderedPlayback != null && renderedPlayback.events.length > 0;
 
   useEffect(() => {
     selectedMixerOutputRef.current = selectedMixerOutput;
   }, [selectedMixerOutput]);
+
+  const loopIterationStartRef = useRef<number | null>(null);
+  const loopAnimationFrameRef = useRef<number | null>(null);
+  const renderedPlaybackRef = useRef<RenderedPlaybackResponse | null>(null);
+  const activeLoopEventRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    renderedPlaybackRef.current = renderedPlayback ?? null;
+    if (!renderedPlayback) {
+      setLoopProgress(0);
+    }
+  }, [renderedPlayback]);
+
+  const pianoRollEvents = useMemo(
+    () => (renderedPlayback?.events ?? []).map((event) => ({
+      ...event,
+      midiNotes: event.midiNotes.map(clampMidi)
+    })),
+    [renderedPlayback]
+  );
+  const totalPlaybackSeconds = renderedPlayback?.totalSeconds ?? 0;
+  const hasRenderedPlayback = pianoRollEvents.length > 0;
+
+  useEffect(() => {
+    if (!hasRenderedPlayback && activeView !== "tonnetz") {
+      setActiveView("tonnetz");
+    }
+  }, [hasRenderedPlayback, activeView]);
+
+  useEffect(() => {
+    recordedChordsRef.current = recordedChords;
+  }, [recordedChords]);
+
+  useEffect(() => {
+    onRecordingStateChange?.(isRecording);
+  }, [isRecording, onRecordingStateChange]);
+
+  const emitRecordedStack = useCallback(
+    (chords: RecordedChord[]) => {
+      if (!onRecordedStack) {
+        return;
+      }
+      const progression = chords.map((entry) =>
+        Array.from(
+          new Set(entry.midiNotes.map((value) => normalisePitchClass(value)))
+        ).sort((a, b) => a - b)
+      );
+      onRecordedStack({ chords, progression });
+    },
+    [onRecordedStack]
+  );
+
+  useEffect(() => {
+    if (!onRecordedStack) {
+      return;
+    }
+    if (isRecording) {
+      return;
+    }
+    if (recordedChords.length === 0) {
+      onRecordedStack({ chords: [], progression: [] });
+      return;
+    }
+    emitRecordedStack(recordedChords);
+  }, [recordedChords, isRecording, onRecordedStack, emitRecordedStack]);
 
   const stopChord = useCallback(() => {
     const outputs = [midiOutRef.current, midiMixerOutRef.current].filter(
@@ -555,6 +649,29 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
     loopTimeoutsRef.current = [];
   }, []);
 
+  const updateLoopProgress = useCallback(() => {
+    const playback = renderedPlaybackRef.current;
+    if (!playback || !isLoopingRef.current) {
+      if (loopAnimationFrameRef.current != null) {
+        window.cancelAnimationFrame(loopAnimationFrameRef.current);
+        loopAnimationFrameRef.current = null;
+      }
+      setLoopProgress(0);
+      return;
+    }
+    const total = playback.totalSeconds > 0 ? playback.totalSeconds : 1;
+    const iterationStart = loopIterationStartRef.current;
+    if (iterationStart == null) {
+      loopIterationStartRef.current = performance.now();
+      setLoopProgress(0);
+    } else {
+      const elapsedSeconds = (performance.now() - iterationStart) / 1000;
+      const progressValue = Math.min(1, elapsedSeconds / total);
+      setLoopProgress(progressValue);
+    }
+    loopAnimationFrameRef.current = window.requestAnimationFrame(updateLoopProgress);
+  }, []);
+
   const scheduleLoopPlayback = useCallback(
     async (playback: RenderedPlaybackResponse) => {
       const [synthOut, mixerOut] = await Promise.all([ensureMidiOut(), ensureMidiMixerOut()]);
@@ -571,11 +688,16 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
         return;
       }
       clearLoopTimeouts();
+      loopIterationStartRef.current = performance.now();
+      setLoopProgress(0);
+      if (loopAnimationFrameRef.current == null) {
+        loopAnimationFrameRef.current = window.requestAnimationFrame(updateLoopProgress);
+      }
       const queueTimeout = (delayMs: number, action: () => void) => {
         const id = window.setTimeout(action, Math.max(0, delayMs));
         loopTimeoutsRef.current.push(id);
       };
-      playback.events.forEach((event) => {
+      playback.events.forEach((event, eventIndex) => {
         const onsetMs = event.onsetSeconds * 1000;
         const durationMs = event.durationSeconds * 1000;
         const notes = event.midiNotes.map(clampMidi);
@@ -583,6 +705,8 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
           if (!isLoopingRef.current) {
             return;
           }
+          activeLoopEventRef.current = eventIndex;
+          onLoopEvent?.({ index: eventIndex, active: true });
           outputs.forEach((out) => {
             notes.forEach((note) => {
               try {
@@ -607,6 +731,9 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
           notes.forEach((note) => {
             loopActiveNotesRef.current.delete(note);
           });
+          if (activeLoopEventRef.current === eventIndex) {
+            onLoopEvent?.({ index: eventIndex, active: false });
+          }
         });
       });
       queueTimeout(Math.max(0, playback.totalSeconds * 1000), () => {
@@ -616,7 +743,15 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
         void scheduleLoopPlayback(playback);
       });
     },
-    [ensureMidiMixerOut, ensureMidiOut, clearLoopTimeouts, setPlaybackError, setIsLooping]
+    [
+      ensureMidiMixerOut,
+      ensureMidiOut,
+      clearLoopTimeouts,
+      setPlaybackError,
+      setIsLooping,
+      updateLoopProgress,
+      setLoopProgress
+    ]
   );
 
   const stopLoopPlayback = useCallback(() => {
@@ -639,7 +774,17 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
     }
     loopActiveNotesRef.current.clear();
     stopChord();
-  }, [clearLoopTimeouts, stopChord]);
+    if (loopAnimationFrameRef.current != null) {
+      window.cancelAnimationFrame(loopAnimationFrameRef.current);
+      loopAnimationFrameRef.current = null;
+    }
+    loopIterationStartRef.current = null;
+    if (activeLoopEventRef.current != null) {
+      onLoopEvent?.({ index: activeLoopEventRef.current, active: false });
+      activeLoopEventRef.current = null;
+    }
+    setLoopProgress(0);
+  }, [clearLoopTimeouts, setLoopProgress, stopChord]);
 
   const startLoopPlayback = useCallback(
     (playback: RenderedPlaybackResponse) => {
@@ -647,10 +792,34 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
       isLoopingRef.current = true;
       setIsLooping(true);
       setPlaybackError(null);
+      renderedPlaybackRef.current = playback;
+      loopIterationStartRef.current = performance.now();
+      setLoopProgress(0);
+      if (loopAnimationFrameRef.current != null) {
+        window.cancelAnimationFrame(loopAnimationFrameRef.current);
+      }
+      loopAnimationFrameRef.current = window.requestAnimationFrame(updateLoopProgress);
       void scheduleLoopPlayback(playback);
     },
-    [scheduleLoopPlayback, stopLoopPlayback]
+    [scheduleLoopPlayback, setLoopProgress, setPlaybackError, stopLoopPlayback, updateLoopProgress]
   );
+
+  const handleLoopPlay = useCallback(() => {
+    const playback = renderedPlaybackRef.current ?? renderedPlayback;
+    if (playback && playback.events.length > 0) {
+      startLoopPlayback(playback);
+    }
+  }, [renderedPlayback, startLoopPlayback]);
+
+  const handleLoopStop = useCallback(() => {
+    stopLoopPlayback();
+  }, [stopLoopPlayback]);
+
+  useEffect(() => {
+    return () => {
+      stopLoopPlayback();
+    };
+  }, [stopLoopPlayback]);
 
   const endActiveChord = useCallback((timestamp: number) => {
     const startTime = recordingStartRef.current;
@@ -889,8 +1058,8 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
         const payload = (await response.json()) as TonnetzOptionsResponse;
         const structures = Array.isArray(payload.structures) ? payload.structures : [];
         setOptions(structures);
-        if (structures.length > 0) {
-          const defaultStructure = structures[0];
+        const defaultStructure = resolveDefaultStructure(structures);
+        if (defaultStructure) {
           setStructureId((prev) => prev ?? defaultStructure.id);
           if (defaultStructure.intervals.length > 0) {
             setIntervalId((prev) => prev ?? defaultStructure.intervals[0]!.id);
@@ -916,7 +1085,10 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
 
   useEffect(() => {
     if (!structureId && options.length > 0) {
-      setStructureId(options[0]!.id);
+      const defaultStructure = resolveDefaultStructure(options);
+      if (defaultStructure) {
+        setStructureId(defaultStructure.id);
+      }
     }
   }, [options, structureId]);
 
@@ -1374,7 +1546,11 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
   }, [tiling, playChord, stopChord, vertexPositionLookup, synthStatus, buildChordLabels, recordChord, fetchChordName, ensureMidiOut, ensureMidiMixerOut, transposeSemitones, endActiveChord, stopLoopPlayback]);
 
   const structureOptions = options;
-  const intervalOptions = structureOptions.find((candidate) => candidate.id === structureId)?.intervals ?? [];
+  const intervalOptions =
+    structureOptions.find((candidate) => candidate.id === structureId)?.intervals ?? [];
+  const activeStructure = structureOptions.find((candidate) => candidate.id === structureId) ?? null;
+  const activeInterval = intervalOptions.find((entry) => entry.id === intervalId) ?? null;
+  const activeIntervalSteps = activeInterval ? activeInterval.steps.join("-") : null;
 
   const toggleRecording = () => {
     if (isRecording) {
@@ -1446,110 +1622,298 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
 
   return (
     <div className="tonnetz-widget">
-      <div className="controls">
-        <div className="field">
-          <label htmlFor="tonnetz-structure">Structure</label>
-          <select
-            id="tonnetz-structure"
-            value={structureId ?? ""}
-            onChange={(event) => setStructureId(event.target.value)}
-            disabled={loadingOptions || options.length === 0}
-          >
-            {structureOptions.map((structure) => (
-              <option key={structure.id} value={structure.id}>
-                {structure.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="field">
-          <label htmlFor="tonnetz-interval">Interval Set</label>
-          <select
-            id="tonnetz-interval"
-            value={intervalId ?? ""}
-            onChange={(event) => setIntervalId(event.target.value)}
-            disabled={loadingOptions || intervalOptions.length === 0}
-          >
-            {intervalOptions.map((interval) => (
-              <option key={interval.id} value={interval.id}>
-                {interval.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="field">
-          <label htmlFor="tonnetz-degree">Scale Degree</label>
-          <select
-            id="tonnetz-degree"
-            value={degree}
-            onChange={(event) => setDegree(event.target.value)}
-            disabled={loadingOptions}
-          >
-            {DEGREE_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field tonnetz-transpose">
-          <label htmlFor="tonnetz-transpose">Transpose (semitones)</label>
-          <div className="tonnetz-transpose-controls">
+      <div className="tonnetz-control-sections">
+        <div className="tonnetz-controls">
+          <div className="tonnetz-controls-tabs" role="tablist">
             <button
               type="button"
-              className="tonnetz-transpose-step"
-              onClick={() => setTransposeSemitones((value) => value - 1)}
+              className={activeControlTab === "structure" ? "tonnetz-controls-tab active" : "tonnetz-controls-tab"}
+              role="tab"
+              aria-selected={activeControlTab === "structure"}
+              onClick={() => setActiveControlTab("structure")}
             >
-              -
-            </button>
-            <input
-              id="tonnetz-transpose"
-              type="number"
-              step={1}
-              value={transposeSemitones}
-              onChange={(event) => {
-                const value = Number.parseInt(event.target.value, 10);
-                if (!Number.isNaN(value)) {
-                  setTransposeSemitones(value);
-                }
-              }}
-              aria-label="Transpose in semitones"
-            />
-            <button
-              type="button"
-              className="tonnetz-transpose-step"
-              onClick={() => setTransposeSemitones((value) => value + 1)}
-            >
-              +
+              Structure
             </button>
             <button
               type="button"
-              className="tonnetz-transpose-reset"
-              onClick={() => setTransposeSemitones(0)}
+              className={activeControlTab === "transpose" ? "tonnetz-controls-tab active" : "tonnetz-controls-tab"}
+              role="tab"
+              aria-selected={activeControlTab === "transpose"}
+              onClick={() => setActiveControlTab("transpose")}
             >
-              Reset
+              Transpose
+            </button>
+            <button
+              type="button"
+              className={activeControlTab === "mixer" ? "tonnetz-controls-tab active" : "tonnetz-controls-tab"}
+              role="tab"
+              aria-selected={activeControlTab === "mixer"}
+              onClick={() => setActiveControlTab("mixer")}
+            >
+              Mixer
+            </button>
+            <button
+              type="button"
+              className={activeControlTab === "render" ? "tonnetz-controls-tab active" : "tonnetz-controls-tab"}
+              role="tab"
+              aria-selected={activeControlTab === "render"}
+              onClick={() => setActiveControlTab("render")}
+            >
+              Render
             </button>
           </div>
-        </div>
-        <div className="field">
-          <label htmlFor="tonnetz-mixer-output">Mixer Output</label>
-          <select
-            id="tonnetz-mixer-output"
-            value={selectedMixerOutput}
-            onChange={(event) => setSelectedMixerOutput(event.target.value)}
-          >
-            <option value={AUTO_MIXER_SELECTION}>Auto (prefer "MIDI Mixer")</option>
-            <option value={NO_MIXER_SELECTION}>None</option>
-            {availableMixerOutputs.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </div>
 
+          <div className="tonnetz-controls-panels">
+            {activeControlTab === "structure" && (
+              <div className="tonnetz-controls-panel" role="tabpanel" aria-label="Structure controls">
+                <div className="field">
+                  <label htmlFor="tonnetz-structure">Structure</label>
+                  <select
+                    id="tonnetz-structure"
+                    value={structureId ?? ""}
+                    onChange={(event) => setStructureId(event.target.value)}
+                    disabled={loadingOptions || options.length === 0}
+                  >
+                    {structureOptions.map((structure) => (
+                      <option key={structure.id} value={structure.id}>
+                        {structure.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="tonnetz-interval">Interval Set</label>
+                  <select
+                    id="tonnetz-interval"
+                    value={intervalId ?? ""}
+                    onChange={(event) => setIntervalId(event.target.value)}
+                    disabled={loadingOptions || intervalOptions.length === 0}
+                  >
+                    {intervalOptions.map((interval) => (
+                      <option key={interval.id} value={interval.id}>
+                        {interval.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="tonnetz-degree">Scale Degree</label>
+                  <select
+                    id="tonnetz-degree"
+                    value={degree}
+                    onChange={(event) => setDegree(event.target.value)}
+                    disabled={loadingOptions}
+                  >
+                    {DEGREE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="tonnetz-control-summary">
+                  <div>
+                    <strong>Structure:</strong> {activeStructure?.label ?? "—"}
+                  </div>
+                  <div>
+                    <strong>Interval Set:</strong> {activeIntervalSteps ?? "—"}
+                  </div>
+                  <div>
+                    <strong>Scale Degree:</strong> {degree}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeControlTab === "transpose" && (
+              <div className="tonnetz-controls-panel" role="tabpanel" aria-label="Transpose controls">
+                <div className="field tonnetz-transpose">
+                  <label htmlFor="tonnetz-transpose">Transpose (semitones)</label>
+                  <div className="tonnetz-transpose-controls">
+                    <button
+                      type="button"
+                      className="tonnetz-transpose-step"
+                      onClick={() => setTransposeSemitones((value) => value - 1)}
+                    >
+                      –
+                    </button>
+                    <input
+                      id="tonnetz-transpose"
+                      type="number"
+                      step={1}
+                      value={transposeSemitones}
+                      onChange={(event) => {
+                        const value = Number.parseInt(event.target.value, 10);
+                        if (!Number.isNaN(value)) {
+                          setTransposeSemitones(value);
+                        }
+                      }}
+                      aria-label="Transpose in semitones"
+                    />
+                    <button
+                      type="button"
+                      className="tonnetz-transpose-step"
+                      onClick={() => setTransposeSemitones((value) => value + 1)}
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      className="tonnetz-transpose-reset"
+                      onClick={() => setTransposeSemitones(0)}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+                <div className="tonnetz-control-summary">
+                  <strong>Current transpose:</strong> {transposeSemitones > 0 ? `+${transposeSemitones}` : transposeSemitones} st
+                </div>
+              </div>
+            )}
+
+            {activeControlTab === "mixer" && (
+              <div className="tonnetz-controls-panel" role="tabpanel" aria-label="Mixer controls">
+                <div className="field">
+                  <label htmlFor="tonnetz-mixer-output">Mixer Output</label>
+                  <select
+                    id="tonnetz-mixer-output"
+                    value={selectedMixerOutput}
+                    onChange={(event) => setSelectedMixerOutput(event.target.value)}
+                  >
+                    <option value={AUTO_MIXER_SELECTION}>Auto (prefer "MIDI Mixer")</option>
+                    <option value={NO_MIXER_SELECTION}>None</option>
+                    {availableMixerOutputs.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="tonnetz-control-summary">
+                  <div>
+                    <strong>Synth:</strong>{" "}
+                    {synthStatus === "ready"
+                      ? "Ready"
+                      : synthStatus === "initializing"
+                        ? "Initialising"
+                        : synthStatus === "error"
+                          ? `Error${synthError ? ` – ${synthError}` : ""}`
+                          : "Idle"}
+                  </div>
+                  <div>
+                    <strong>Mixer:</strong>{" "}
+                    {midiMixerStatus === "ready"
+                      ? selectedMixerOutput === NO_MIXER_SELECTION
+                        ? "Disabled"
+                        : "Ready"
+                      : midiMixerStatus === "initializing"
+                        ? "Initialising"
+                        : midiMixerStatus === "error"
+                          ? `Error${midiMixerError ? ` – ${midiMixerError}` : ""}`
+                          : selectedMixerOutput === NO_MIXER_SELECTION
+                            ? "Disabled"
+                            : "Idle"}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeControlTab === "render" && (
+              <div className="tonnetz-controls-panel" role="tabpanel" aria-label="Render controls">
+                <div className="field">
+                  <label className="tonnetz-playback-select">
+                    Quantization
+                    <select
+                      value={quantizationOption}
+                      onChange={(event) =>
+                        setQuantizationOption(event.target.value as PlaybackQuantizationOption | "none")
+                      }
+                      disabled={isRecording}
+                    >
+                      {QUANTIZATION_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="field tonnetz-meter-input">
+                  <label>
+                    Loop Meter
+                    <div className="tonnetz-meter-fields">
+                      <input
+                        type="number"
+                        min={1}
+                        value={meterBeatsInput}
+                        onChange={(event) => setMeterBeatsInput(event.target.value)}
+                        disabled={isRecording}
+                      />
+                      <span>/</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={meterUnitInput}
+                        onChange={(event) => setMeterUnitInput(event.target.value)}
+                        disabled={isRecording}
+                      />
+                    </div>
+                  </label>
+                </div>
+                <div className="field">
+                  <label>
+                    Tempo (BPM)
+                    <input
+                      type="number"
+                      min={20}
+                      max={400}
+                      value={tempoBpm}
+                      onChange={(event) => {
+                        const value = Number.parseInt(event.target.value, 10);
+                        if (Number.isNaN(value)) {
+                          setTempoBpm(DEFAULT_TEMPO_BPM);
+                          return;
+                        }
+                        const clamped = Math.min(400, Math.max(20, value));
+                        setTempoBpm(clamped);
+                      }}
+                      disabled={isRecording}
+                    />
+                  </label>
+                </div>
+                <div className="tonnetz-render-actions">
+                  <button
+                    type="button"
+                    onClick={handleRenderLoop}
+                    disabled={isRecording || !hasRecordedSession || isRenderingPlayback}
+                  >
+                    Render Loop
+                  </button>
+                  <div className="tonnetz-render-status">
+                    {isRenderingPlayback && <div className="status info">Rendering loop…</div>}
+                    {playbackError && <div className="status error">{playbackError}</div>}
+                    {renderedPlayback && !isRenderingPlayback && !playbackError && (
+                      <div className="status info">
+                        Loop ready: {renderedPlayback.events.length} chords ·{" "}
+                        {renderedPlayback.totalSeconds.toFixed(2)} s ·{" "}
+                        <a
+                          href={`data:audio/midi;base64,${renderedPlayback.midiBase64}`}
+                          download="tonnetz-loop.mid"
+                        >
+                          Download MIDI
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="tonnetz-record-controls">
@@ -1564,85 +1928,6 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
           </button>
           <button type="button" onClick={clearRecorded} disabled={recordedChords.length === 0}>
             Clear Stack
-          </button>
-        </div>
-
-        <div className="tonnetz-record-section">
-          <label className="tonnetz-playback-select">
-            Quantization
-            <select
-              value={quantizationOption}
-              onChange={(event) =>
-                setQuantizationOption(event.target.value as PlaybackQuantizationOption | "none")
-              }
-              disabled={isRecording}
-            >
-              {QUANTIZATION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="tonnetz-playback-select tonnetz-meter-input">
-            Loop Meter
-            <div className="tonnetz-meter-fields">
-              <input
-                type="number"
-                min={1}
-                value={meterBeatsInput}
-                onChange={(event) => setMeterBeatsInput(event.target.value)}
-                disabled={isRecording}
-              />
-              <span>/</span>
-              <input
-                type="number"
-                min={1}
-                value={meterUnitInput}
-                onChange={(event) => setMeterUnitInput(event.target.value)}
-                disabled={isRecording}
-              />
-            </div>
-          </label>
-          <label className="tonnetz-playback-select">
-            Tempo (BPM)
-            <input
-              type="number"
-              min={20}
-              max={400}
-              value={tempoBpm}
-              onChange={(event) => {
-                const value = Number.parseInt(event.target.value, 10);
-                if (Number.isNaN(value)) {
-                  setTempoBpm(DEFAULT_TEMPO_BPM);
-                  return;
-                }
-                const clamped = Math.min(400, Math.max(20, value));
-                setTempoBpm(clamped);
-              }}
-              disabled={isRecording}
-            />
-          </label>
-          <button
-            type="button"
-            onClick={handleRenderLoop}
-            disabled={isRecording || !hasRecordedSession || isRenderingPlayback}
-          >
-            Render Loop
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (renderedPlayback) {
-                startLoopPlayback(renderedPlayback);
-              }
-            }}
-            disabled={!canPlayLoop || isLooping || isRenderingPlayback}
-          >
-            Play Loop
-          </button>
-          <button type="button" onClick={stopLoopPlayback} disabled={!isLooping}>
-            Stop Loop
           </button>
         </div>
 
@@ -1684,19 +1969,79 @@ export function TonnetzWidget({ serverUrl }: TonnetzWidgetProps) {
                 download="tonnetz-loop.mid"
               >
                 Download MIDI
-              </a>
+              </a>{" "}
+              · Use the Piano Roll tab to view and control the loop.
             </div>
           )}
         </div>
       </div>
 
-      {optionsError && <div className="status error">{optionsError}</div>}
-      {tilingError && <div className="status error">{tilingError}</div>}
-      {loadingTiling && <div className="status info">Loading tiling…</div>}
+      <div className="tonnetz-tab-bar" role="tablist">
+        <button
+          type="button"
+          className={activeView === "tonnetz" ? "tonnetz-tab active" : "tonnetz-tab"}
+          role="tab"
+          aria-selected={activeView === "tonnetz"}
+          onClick={() => setActiveView("tonnetz")}
+        >
+          Tonnetz
+        </button>
+        <button
+          type="button"
+          className={
+            activeView === "piano-roll"
+              ? "tonnetz-tab active"
+              : hasRenderedPlayback
+                ? "tonnetz-tab"
+                : "tonnetz-tab disabled"
+          }
+          role="tab"
+          aria-selected={activeView === "piano-roll"}
+          aria-disabled={!hasRenderedPlayback}
+          disabled={!hasRenderedPlayback}
+          onClick={() => {
+            if (hasRenderedPlayback) {
+              setActiveView("piano-roll");
+            }
+          }}
+        >
+          Piano Roll
+        </button>
+      </div>
 
-      <div className="tonnetz-canvas" ref={containerRef} />
+      <div className="tonnetz-tab-panels">
+        {activeView === "tonnetz" && (
+          <div className="tonnetz-panel" role="tabpanel">
+            {optionsError && <div className="status error">{optionsError}</div>}
+            {tilingError && <div className="status error">{tilingError}</div>}
+            {loadingTiling && <div className="status info">Loading tiling…</div>}
+            <div className="tonnetz-canvas" ref={containerRef} />
+          </div>
+        )}
+        {activeView === "piano-roll" && (
+          <div className="tonnetz-panel" role="tabpanel">
+            {hasRenderedPlayback ? (
+              <PianoRollView
+                events={pianoRollEvents}
+                totalSeconds={totalPlaybackSeconds}
+                progress={loopProgress}
+                isPlaying={isLooping}
+                onPlay={handleLoopPlay}
+                onStop={handleLoopStop}
+                midiDownloadHref={
+                  renderedPlayback?.midiBase64
+                    ? `data:audio/midi;base64,${renderedPlayback.midiBase64}`
+                    : null
+                }
+              />
+            ) : (
+              <div className="status info">Render a loop to view the piano roll.</div>
+            )}
+          </div>
+        )}
+      </div>
 
-      {currentChordDescription && (
+      {activeView === "tonnetz" && currentChordDescription && (
         <div className="tonnetz-current">
           <h3>Current Chord</h3>
           <div className="tonnetz-current-name">

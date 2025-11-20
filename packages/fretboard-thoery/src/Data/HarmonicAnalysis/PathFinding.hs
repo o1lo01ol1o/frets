@@ -391,8 +391,9 @@ reconstructPath matrices backtrackMatrices startRow startCol numMatrices numRows
 
       -- Backtrack through matrices
       path = buildPath (numMatrices - 2) startRow startCol [finalPoint]
-   in reverse path
+   in path
   where
+    -- 'buildPath' prepends each earlier point, so 'acc' is already in chronological order.
     buildPath matrixIndex currentRow currentCol acc
       | matrixIndex < 0 = acc
       | otherwise =

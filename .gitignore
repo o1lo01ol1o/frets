@@ -22,6 +22,8 @@ devenv.local.nix
 # pre-commit
 .pre-commit-config.yaml
 
+.cabal/
+.cabal-local/
 .cabal-fmt-*
 
 .vscode

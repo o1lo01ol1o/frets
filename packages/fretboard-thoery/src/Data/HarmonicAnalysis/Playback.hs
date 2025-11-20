@@ -8,12 +8,15 @@
 module Data.HarmonicAnalysis.Playback
   ( PlaybackRequest (..),
     PlaybackOptions (..),
+    PlaybackWindow (..),
     QuantizationGrid (..),
     LoopMeter (..),
     RecordingEvent (..),
     ChordEventKind (..),
     RenderedPlayback (..),
     RenderedChordSpan (..),
+    RenderedBeatGrid (..),
+    RenderedPlaybackWindow (..),
     PlaybackError (..),
     renderPlayback,
     playbackErrorMessage,
@@ -39,13 +42,13 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as Base64
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.EventList.Relative.TimeBody as EventList
-import Data.Foldable (foldl')
+import Data.Foldable (foldl', for_)
 import Data.List (sortOn)
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import qualified Data.List.NonEmpty as NE
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.Scientific (Scientific, toRealFloat)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -114,10 +117,44 @@ instance ToJSON LoopMeter where
         "beatUnit" .= meterBeatUnit
       ]
 
+data PlaybackWindow = PlaybackWindow
+  { playbackWindowStartSeconds :: !Rational,
+    playbackWindowEndSeconds :: !(Maybe Rational)
+  }
+  deriving (Eq, Show, Generic, NFData)
+
+instance FromJSON PlaybackWindow where
+  parseJSON = withObject "PlaybackWindow" $ \obj -> do
+    startValue <- obj .: "startSeconds"
+    let startSeconds = scientificSecondsToRational startValue
+    when (startSeconds < 0) $
+      fail "Playback window startSeconds must be non-negative"
+    maybeEndValue <- obj .:? "endSeconds"
+    let endSeconds = fmap scientificSecondsToRational maybeEndValue
+    for_ endSeconds $ \endCandidate ->
+      when (endCandidate < 0) $
+        fail "Playback window endSeconds must be non-negative"
+    for_ endSeconds $ \endCandidate ->
+      when (endCandidate < startSeconds) $
+        fail "Playback window endSeconds must be greater than or equal to startSeconds"
+    pure
+      PlaybackWindow
+        { playbackWindowStartSeconds = startSeconds,
+          playbackWindowEndSeconds = endSeconds
+        }
+
+instance ToJSON PlaybackWindow where
+  toJSON PlaybackWindow {playbackWindowStartSeconds, playbackWindowEndSeconds} =
+    object
+      [ "startSeconds" .= secondsToScientific playbackWindowStartSeconds,
+        "endSeconds" .= fmap secondsToScientific playbackWindowEndSeconds
+      ]
+
 data PlaybackOptions = PlaybackOptions
   { playbackQuantization :: !(Maybe QuantizationGrid),
     playbackLoopMeter :: !(Maybe LoopMeter),
-    playbackTempoBpm :: !(Maybe Scientific)
+    playbackTempoBpm :: !(Maybe Scientific),
+    playbackWindow :: !(Maybe PlaybackWindow)
   }
   deriving (Eq, Show, Generic, NFData)
 
@@ -126,14 +163,16 @@ instance FromJSON PlaybackOptions where
     playbackQuantization <- obj .:? "quantization"
     playbackLoopMeter <- obj .:? "loopMeter"
     playbackTempoBpm <- obj .:? "tempoBpm"
+    playbackWindow <- obj .:? "trimWindow"
     pure PlaybackOptions {..}
 
 instance ToJSON PlaybackOptions where
-  toJSON PlaybackOptions {playbackQuantization, playbackLoopMeter, playbackTempoBpm} =
+  toJSON PlaybackOptions {playbackQuantization, playbackLoopMeter, playbackTempoBpm, playbackWindow} =
     object
       [ "quantization" .= playbackQuantization,
         "loopMeter" .= playbackLoopMeter,
-        "tempoBpm" .= playbackTempoBpm
+        "tempoBpm" .= playbackTempoBpm,
+        "trimWindow" .= playbackWindow
       ]
 
 newtype ChordId = ChordId {unChordId :: Text}
@@ -254,7 +293,7 @@ data PlaybackRequest = PlaybackRequest
 instance FromJSON PlaybackRequest where
   parseJSON = withObject "PlaybackRequest" $ \obj -> do
     playbackEvents <- obj .:? "events" .!= []
-    playbackOptions <- obj .:? "options" .!= PlaybackOptions Nothing Nothing Nothing
+    playbackOptions <- obj .:? "options" .!= PlaybackOptions Nothing Nothing Nothing Nothing
     pure PlaybackRequest {..}
 
 instance ToJSON PlaybackRequest where
@@ -281,10 +320,51 @@ instance ToJSON RenderedChordSpan where
         "midiNotes" .= rcsMidiNotes
       ]
 
+data RenderedPlaybackWindow = RenderedPlaybackWindow
+  { rpwStartSeconds :: !Rational,
+    rpwEndSeconds :: !Rational
+  }
+  deriving (Eq, Show, Generic, NFData)
+
+instance ToJSON RenderedPlaybackWindow where
+  toJSON RenderedPlaybackWindow {rpwStartSeconds, rpwEndSeconds} =
+    object
+      [ "startSeconds" .= secondsToScientific rpwStartSeconds,
+        "endSeconds" .= secondsToScientific rpwEndSeconds
+      ]
+
+data RenderedBeatGrid = RenderedBeatGrid
+  { rbgTempoBpm :: !Rational,
+    rbgMeterBeats :: !Int,
+    rbgMeterBeatUnit :: !Int,
+    rbgStartOffsetSeconds :: !Rational,
+    rbgMeasureStarts :: ![Rational],
+    rbgBeatStarts :: ![Rational],
+    rbgSubdivisionStarts :: ![Rational],
+    rbgSubdivisionsPerBeat :: !(Maybe Int)
+  }
+  deriving (Eq, Show, Generic, NFData)
+
+instance ToJSON RenderedBeatGrid where
+  toJSON RenderedBeatGrid {..} =
+    object
+      [ "tempoBpm" .= rationalToScientific rbgTempoBpm,
+        "meterBeats" .= rbgMeterBeats,
+        "meterBeatUnit" .= rbgMeterBeatUnit,
+        "startOffsetSeconds" .= secondsToScientific rbgStartOffsetSeconds,
+        "measureStarts" .= fmap secondsToScientific rbgMeasureStarts,
+        "beatStarts" .= fmap secondsToScientific rbgBeatStarts,
+        "subdivisionStarts" .= fmap secondsToScientific rbgSubdivisionStarts,
+        "subdivisionsPerBeat" .= rbgSubdivisionsPerBeat
+      ]
+
 data RenderedPlayback = RenderedPlayback
   { rpMidiBase64 :: !Text,
     rpEvents :: ![RenderedChordSpan],
-    rpTotalSeconds :: !Rational
+    rpTotalSeconds :: !Rational,
+    rpSourceTotalSeconds :: !Rational,
+    rpWindow :: !(Maybe RenderedPlaybackWindow),
+    rpBeatGrid :: !(Maybe RenderedBeatGrid)
   }
   deriving (Eq, Show, Generic, NFData)
 
@@ -293,6 +373,9 @@ instance ToJSON RenderedPlayback where
     object
       [ "midiBase64" .= rpMidiBase64,
         "totalSeconds" .= secondsToScientific rpTotalSeconds,
+        "sourceTotalSeconds" .= secondsToScientific rpSourceTotalSeconds,
+        "window" .= rpWindow,
+        "beatGrid" .= rpBeatGrid,
         "events" .= rpEvents
       ]
 
@@ -314,12 +397,22 @@ renderPlayback PlaybackRequest {playbackEvents, playbackOptions}
   | null playbackEvents = Left PlaybackErrorEmpty
   | otherwise = do
       timeline <- buildTimeline playbackEvents
-      let quantized =
+      let tempo = tempoFromOptions playbackOptions
+          quantized =
             case playbackQuantization playbackOptions of
               Nothing -> timeline
-              Just grid -> quantizeTimeline grid (tempoFromOptions playbackOptions) timeline
-          padded = applyLoopPadding (tempoFromOptions playbackOptions) (playbackLoopMeter playbackOptions) quantized
-      midiBytes <- timelineToMidi (tempoFromOptions playbackOptions) padded
+              Just grid -> quantizeTimeline grid tempo timeline
+          padded = applyLoopPadding tempo (playbackLoopMeter playbackOptions) quantized
+          (trimmedTimeline, appliedWindow) =
+            applyPlaybackWindow (playbackWindow playbackOptions) padded
+          beatGrid =
+            buildBeatGrid
+              tempo
+              (playbackLoopMeter playbackOptions)
+              (playbackQuantization playbackOptions)
+              appliedWindow
+              trimmedTimeline
+      midiBytes <- timelineToMidi tempo trimmedTimeline
       let encoded = T.decodeUtf8 (Base64.encode midiBytes)
           renderedSpans =
             fmap
@@ -331,12 +424,15 @@ renderPlayback PlaybackRequest {playbackEvents, playbackOptions}
                       rcsMidiNotes = fmap (fromIntegral . unMidiNote) (NE.toList spanNotes)
                     }
               )
-              (timelineSpans padded)
+              (timelineSpans trimmedTimeline)
       pure
         RenderedPlayback
           { rpMidiBase64 = encoded,
             rpEvents = renderedSpans,
-            rpTotalSeconds = timelineTotal padded
+            rpTotalSeconds = timelineTotal trimmedTimeline,
+            rpSourceTotalSeconds = timelineTotal padded,
+            rpWindow = appliedWindow,
+            rpBeatGrid = beatGrid
           }
 
 --------------------------------------------------------------------------------
@@ -494,6 +590,159 @@ applyLoopPadding tempo maybeMeter timeline@Timeline {timelineTotal} =
           paddedSeconds = paddedBeats * 60 / tempo
        in timeline {timelineTotal = paddedSeconds}
 
+applyPlaybackWindow ::
+  Maybe PlaybackWindow ->
+  Timeline ->
+  (Timeline, Maybe RenderedPlaybackWindow)
+applyPlaybackWindow maybeWindow timeline@Timeline {timelineTotal} =
+  case maybeWindow of
+    Nothing -> (timeline, Nothing)
+    Just window ->
+      let (startSeconds, endSeconds) = normaliseWindow timelineTotal window
+       in if startSeconds <= 0 && endSeconds >= timelineTotal
+            then (timeline, Nothing)
+            else
+              ( trimTimelineRange startSeconds endSeconds timeline,
+                Just
+                  RenderedPlaybackWindow
+                    { rpwStartSeconds = startSeconds,
+                      rpwEndSeconds = endSeconds
+                    }
+              )
+
+normaliseWindow :: Rational -> PlaybackWindow -> (Rational, Rational)
+normaliseWindow total PlaybackWindow {playbackWindowStartSeconds, playbackWindowEndSeconds} =
+  let startClamped = max 0 (min playbackWindowStartSeconds total)
+      endCandidate = fromMaybe total playbackWindowEndSeconds
+      endClamped = max startClamped (min endCandidate total)
+   in (startClamped, endClamped)
+
+trimTimelineRange :: Rational -> Rational -> Timeline -> Timeline
+trimTimelineRange start end Timeline {timelineSpans, timelineTotal} =
+  let trimmedSpans =
+        sortOn spanOnset $
+          mapMaybe (trimChordSpan start end) timelineSpans
+      duration = max 0 (end - start)
+   in Timeline {timelineSpans = trimmedSpans, timelineTotal = duration}
+
+trimChordSpan :: Rational -> Rational -> ChordSpan -> Maybe ChordSpan
+trimChordSpan start end spanItem@ChordSpan {spanOnset, spanDuration}
+  | spanEnd <= start = Nothing
+  | spanOnset >= end = Nothing
+  | trimmedEnd <= trimmedStart = Nothing
+  | otherwise =
+      Just
+        spanItem
+          { spanOnset = trimmedStart - start,
+            spanDuration = trimmedEnd - trimmedStart
+          }
+  where
+    spanEnd = spanOnset + spanDuration
+    trimmedStart = max start spanOnset
+    trimmedEnd = min end spanEnd
+
+buildBeatGrid ::
+  Rational ->
+  Maybe LoopMeter ->
+  Maybe QuantizationGrid ->
+  Maybe RenderedPlaybackWindow ->
+  Timeline ->
+  Maybe RenderedBeatGrid
+buildBeatGrid tempo maybeMeter maybeQuant maybeWindow timeline@Timeline {timelineTotal}
+  | timelineTotal <= 0 = Nothing
+  | tempo <= 0 = Nothing
+  | otherwise =
+      case maybeMeter of
+        Nothing -> Nothing
+        Just LoopMeter {meterBeats, meterBeatUnit} ->
+          let startOffset = maybe 0 rpwStartSeconds maybeWindow
+              endOffset = startOffset + timelineTotal
+              beatLength = beatLengthSeconds tempo meterBeatUnit
+              measureLength = beatLength * fromIntegral meterBeats
+              beatStartsGlobal =
+                generateAlignedMarkers beatLength startOffset endOffset
+              measureStartsGlobal =
+                generateAlignedMarkers measureLength startOffset endOffset
+              previousBeatStart =
+                if beatLength <= 0
+                  then Nothing
+                  else
+                    let beatIndex = floor (startOffset / beatLength)
+                        candidate = fromIntegral beatIndex * beatLength
+                     in if candidate < startOffset then Just candidate else Nothing
+              subdivisionsPerBeat =
+                maybe Nothing (Just . quantizationToSubdivisions) maybeQuant
+              subdivisionStartsGlobal =
+                case subdivisionsPerBeat of
+                  Nothing -> []
+                  Just perBeat ->
+                    let beatSeeds =
+                          maybe beatStartsGlobal (: beatStartsGlobal) previousBeatStart
+                     in concatMap
+                          (subdivisionsForBeat beatLength perBeat startOffset endOffset)
+                          beatSeeds
+              shift value = value - startOffset
+              withinTimeline value = value >= 0 && value <= timelineTotal
+              beatStarts =
+                filter withinTimeline (fmap shift beatStartsGlobal)
+              measureStarts =
+                filter withinTimeline (fmap shift measureStartsGlobal)
+              subdivisionStarts =
+                filter withinTimeline (fmap shift subdivisionStartsGlobal)
+           in Just
+                RenderedBeatGrid
+                  { rbgTempoBpm = tempo,
+                    rbgMeterBeats = meterBeats,
+                    rbgMeterBeatUnit = meterBeatUnit,
+                    rbgStartOffsetSeconds = startOffset,
+                    rbgMeasureStarts = measureStarts,
+                    rbgBeatStarts = beatStarts,
+                    rbgSubdivisionStarts = subdivisionStarts,
+                    rbgSubdivisionsPerBeat = subdivisionsPerBeat
+                  }
+
+beatLengthSeconds :: Rational -> Int -> Rational
+beatLengthSeconds tempo beatUnit =
+  (60 / tempo) * (4 / fromIntegral (max 1 beatUnit))
+
+generateAlignedMarkers :: Rational -> Rational -> Rational -> [Rational]
+generateAlignedMarkers step startInclusive endInclusive
+  | step <= 0 = []
+  | startInclusive > endInclusive = []
+  | otherwise =
+      let firstIndex = ceiling (startInclusive / step)
+          firstValue = fromIntegral firstIndex * step
+       in if firstValue > endInclusive
+            then []
+            else takeWhile (<= endInclusive) (iterate (+ step) firstValue)
+
+subdivisionsForBeat ::
+  Rational ->
+  Int ->
+  Rational ->
+  Rational ->
+  Rational ->
+  [Rational]
+subdivisionsForBeat beatLength perBeat startInclusive endInclusive beatStart
+  | perBeat <= 1 = []
+  | otherwise =
+      [ marker
+        | subdivisionIndex <- [1 .. perBeat - 1],
+          let marker =
+                beatStart
+                  + (fromIntegral subdivisionIndex * beatLength / fromIntegral (max 1 perBeat)),
+          marker >= startInclusive,
+          marker <= endInclusive
+      ]
+
+quantizationToSubdivisions :: QuantizationGrid -> Int
+quantizationToSubdivisions = \case
+  QuantizeQuarter -> 1
+  QuantizeEighth -> 2
+  QuantizeTriplet -> 3
+  QuantizeSixteenth -> 4
+  QuantizeSextuplet -> 6
+
 maximumEnd :: [ChordSpan] -> Rational
 maximumEnd = foldl' (\acc spanItem -> max acc (spanOnset spanItem + spanDuration spanItem)) 0
 
@@ -585,13 +834,20 @@ scientificMillisToSeconds :: Scientific -> Rational
 scientificMillisToSeconds value =
   toRational (toRealFloat value :: Double) / 1000
 
+scientificSecondsToRational :: Scientific -> Rational
+scientificSecondsToRational value =
+  toRational (toRealFloat value :: Double)
+
 secondsToMilliseconds :: Rational -> Scientific
 secondsToMilliseconds value =
   realToFrac (fromRational value * 1000 :: Double)
 
-secondsToScientific :: Rational -> Scientific
-secondsToScientific value =
+rationalToScientific :: Rational -> Scientific
+rationalToScientific value =
   realToFrac (fromRational value :: Double)
+
+secondsToScientific :: Rational -> Scientific
+secondsToScientific = rationalToScientific
 
 playbackErrorMessage :: PlaybackError -> Text
 playbackErrorMessage = \case

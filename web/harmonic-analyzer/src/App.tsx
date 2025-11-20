@@ -330,6 +330,20 @@ function App() {
   const progressionSignature = useMemo(() => JSON.stringify(progression), [progression]);
   const tuningSignature = useMemo(() => JSON.stringify(selectedTuning.strings), [selectedTuning]);
 
+  const analysisSteps = useMemo(() => {
+    if (!analysis?.steps) {
+      return [];
+    }
+    return [...analysis.steps].sort((left, right) => left.index - right.index);
+  }, [analysis]);
+
+  const voiceLeadingSteps = useMemo(() => {
+    if (!voiceLeading?.steps) {
+      return [];
+    }
+    return [...voiceLeading.steps].sort((left, right) => left.index - right.index);
+  }, [voiceLeading]);
+
   useEffect(() => {
     if (isRecording) {
       return;
@@ -456,8 +470,7 @@ function App() {
     if (isRecording) {
       return;
     }
-    const steps = analysis?.steps ?? [];
-    if (steps.length === 0) {
+    if (analysisSteps.length === 0) {
       return;
     }
     const trimmedServer = serverUrl.trim();
@@ -465,7 +478,7 @@ function App() {
       return;
     }
     const pending: Array<{ key: string; mode: string; tonic: number }> = [];
-    steps.forEach((step) => {
+    analysisSteps.forEach((step) => {
       const mode = step.mode;
       const tonic = step.tonality;
       if (typeof mode !== "string" || mode.trim().length === 0) {
@@ -508,22 +521,22 @@ function App() {
       }
     })();
     return () => controller.abort();
-  }, [analysis, serverUrl, isRecording, forceScaleCacheUpdate]);
+  }, [analysisSteps, serverUrl, isRecording, forceScaleCacheUpdate]);
 
   const combinedRows = useMemo(() => {
     const length = Math.max(
       progression.length,
-      analysis?.steps?.length ?? 0,
-      voiceLeading?.steps?.length ?? 0,
+      analysisSteps.length,
+      voiceLeadingSteps.length,
       recordedChords.length
     );
     return Array.from({ length }, (_, index) => ({
-      analysis: analysis?.steps?.[index] ?? null,
-      voice: voiceLeading?.steps?.[index] ?? null,
+      analysis: analysisSteps[index] ?? null,
+      voice: voiceLeadingSteps[index] ?? null,
       recorded: recordedChords[index] ?? null,
       pitchClasses: progression[index] ?? []
     }));
-  }, [analysis, voiceLeading, progression, recordedChords]);
+  }, [analysisSteps, voiceLeadingSteps, progression, recordedChords]);
 
   const showResults = progression.length > 0 && !isRecording;
 

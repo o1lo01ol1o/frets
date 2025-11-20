@@ -120,6 +120,10 @@ import Data.Tonnetz.AmmannBeekner
     VertexNote (..),
     computeTiling,
   )
+import Data.Tonnetz.Generalized
+  ( IntervalInterpretation (..),
+    computeGeneralizedTiling,
+  )
 import Data.Tonnetz.Geometry
   ( TonnetzCoordinate (..),
     TonnetzFace (..),
@@ -233,9 +237,8 @@ getTonnetzOptions = pure $
               tsoLabel = label,
               tsoIntervals = intervals
             }
-    buildInterval structureId steps =
-      let ints = tupleToIntList steps
-          stepLabel = T.intercalate "-" (fmap (T.pack . show) ints)
+    buildInterval structureId ints =
+      let stepLabel = T.intercalate "-" (fmap (T.pack . show) ints)
           optionId = T.intercalate ":" [structureId, stepLabel]
        in TonnetzIntervalOptionResponse
             { tioId = optionId,
@@ -253,25 +256,66 @@ postTonnetzTiling ServerContext {..} TonnetzTilingRequest {..} = do
       (badRequest "Unrecognised Tonnetz structure")
       pure
       (structureFromText ttrStructure)
-  intervalTuple <-
-    case ttrInterval of
-      [a, b, c, d] ->
-        pure (toMod7 a, toMod7 b, toMod7 c, toMod7 d)
-      _ ->
-        badRequest "Interval must contain exactly four integers"
   degreeValue <-
     maybe
       (badRequest "Unrecognised degree")
       pure
       (readMaybe (T.unpack (T.strip ttrDegree)))
   let baseMidi = clampMidi (fromMaybe 60 ttrBaseMidi)
-      computation = computeTiling degreeValue intervalTuple baseMidi scGeometry
-      vertexResponses = fmap toVertexResponse (Map.elems (tcVertexNotes computation))
+  (intervalDisplay, computation) <-
+    case structure of
+      TonnetzStructureClassical -> do
+        intervalTuple <-
+          case ttrInterval of
+            [a, b, c, d] ->
+              pure (toMod7 a, toMod7 b, toMod7 c, toMod7 d)
+            _ ->
+              badRequest "Interval must contain exactly four integers"
+        let comp = computeTiling degreeValue intervalTuple baseMidi scGeometry
+        pure (tupleToIntList intervalTuple, comp)
+      TonnetzStructureTetrads -> do
+        intervalTuple <-
+          case ttrInterval of
+            [a, b, c, d] ->
+              pure (toMod7 a, toMod7 b, toMod7 c, toMod7 d)
+            _ ->
+              badRequest "Interval must contain exactly four integers"
+        let comp = computeTiling degreeValue intervalTuple baseMidi scGeometry
+        pure (tupleToIntList intervalTuple, comp)
+      TonnetzStructureGeneralizedChromatic -> do
+        triple <-
+          case ttrInterval of
+            [a, b, c] ->
+              pure (a, b, c)
+            _ ->
+              badRequest "Interval must contain exactly three integers"
+        let comp =
+              computeGeneralizedTiling
+                IntervalInterpretationChromatic
+                degreeValue
+                triple
+                baseMidi
+        pure (tripleToList triple, comp)
+      TonnetzStructureGeneralizedModal -> do
+        triple <-
+          case ttrInterval of
+            [a, b, c] ->
+              pure (a, b, c)
+            _ ->
+              badRequest "Interval must contain exactly three integers"
+        let comp =
+              computeGeneralizedTiling
+                IntervalInterpretationModal
+                degreeValue
+                triple
+                baseMidi
+        pure (tripleToList triple, comp)
+  let vertexResponses = fmap toVertexResponse (Map.elems (tcVertexNotes computation))
       polygonResponses = fmap toPolygonResponse (tcPolygons computation)
   pure
     TonnetzTilingResponse
       { ttvStructure = structureToText structure,
-        ttvInterval = tupleToIntList intervalTuple,
+        ttvInterval = intervalDisplay,
         ttvDegree = T.pack (show degreeValue),
         ttvBaseMidi = baseMidi,
         ttvVertices = vertexResponses,
@@ -313,6 +357,9 @@ buildChord (Just name) aliases =
 
 tupleToIntList :: (Mod 7, Mod 7, Mod 7, Mod 7) -> [Int]
 tupleToIntList (a, b, c, d) = fmap (fromIntegral . unMod) [a, b, c, d]
+
+tripleToList :: (Int, Int, Int) -> [Int]
+tripleToList (a, b, c) = [a, b, c]
 
 coordinateToList :: TonnetzCoordinate -> [Int]
 coordinateToList TonnetzCoordinate {..} = [tcA, tcB, tcC, tcD]
@@ -1208,9 +1255,9 @@ buildVoiceLeadingResponse fretboard baseOctaves frettings =
     computeOctave Nothing _ _ = Nothing
     computeOctave (Just baseOct) openPitchClass fretNumber =
       let openPcInt = fromIntegral (unMod openPitchClass)
-          total = openPcInt + fretNumber
-          octaveOffset = total `div` 12
-       in Just (baseOct + octaveOffset)
+          baseMidi = (baseOct + 1) * 12 + openPcInt
+          midiValue = baseMidi + fretNumber
+       in Just (midiValue `div` 12 - 1)
 
 --------------------------------------------------------------------------------
 -- Helpers

@@ -16,11 +16,13 @@ import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Map.Strict as Map
-import Data.List (sort)
+import Data.List (nub, sort)
 
 data TonnetzStructure
   = TonnetzStructureClassical
   | TonnetzStructureTetrads
+  | TonnetzStructureGeneralizedChromatic
+  | TonnetzStructureGeneralizedModal
   deriving (Eq, Ord, Enum, Bounded, Show)
 
 allStructures :: [TonnetzStructure]
@@ -29,19 +31,25 @@ allStructures = [minBound .. maxBound]
 structureToText :: TonnetzStructure -> Text
 structureToText TonnetzStructureClassical = "Classical"
 structureToText TonnetzStructureTetrads = "Tetrads"
+structureToText TonnetzStructureGeneralizedChromatic = "Generalized (Chromatic)"
+structureToText TonnetzStructureGeneralizedModal = "Generalized (Modal)"
 
 structureFromText :: Text -> Maybe TonnetzStructure
 structureFromText txt =
   case T.toLower (T.strip txt) of
     "classical" -> Just TonnetzStructureClassical
     "tetrads" -> Just TonnetzStructureTetrads
+    "generalized (chromatic)" -> Just TonnetzStructureGeneralizedChromatic
+    "generalized (modal)" -> Just TonnetzStructureGeneralizedModal
     _ -> Nothing
 
 intervalOptions ::
   TonnetzStructure ->
-  [(Mod 7, Mod 7, Mod 7, Mod 7)]
-intervalOptions TonnetzStructureClassical = classicalOptions
-intervalOptions TonnetzStructureTetrads = tetradOptions
+  [[Int]]
+intervalOptions TonnetzStructureClassical = fmap tupleToIntList classicalOptions
+intervalOptions TonnetzStructureTetrads = fmap tupleToIntList tetradOptions
+intervalOptions TonnetzStructureGeneralizedChromatic = generalizedChromaticOptions
+intervalOptions TonnetzStructureGeneralizedModal = generalizedModalOptions
 
 classicalOptions :: [(Mod 7, Mod 7, Mod 7, Mod 7)]
 classicalOptions =
@@ -74,6 +82,9 @@ diatonicIntervals = [minBound .. maxBound]
 toInt :: Mod 7 -> Int
 toInt = fromIntegral . unMod
 
+tupleToIntList :: (Mod 7, Mod 7, Mod 7, Mod 7) -> [Int]
+tupleToIntList (a, b, c, d) = fmap toInt [a, b, c, d]
+
 collectUnique :: [(Mod 7, Mod 7, Mod 7, Mod 7)] -> [(Mod 7, Mod 7, Mod 7, Mod 7)]
 collectUnique =
   Map.elems
@@ -87,3 +98,23 @@ allEqual ::
   (a, a, a, a) ->
   Bool
 allEqual (a, b, c, d) = a == b && b == c && c == d
+
+generalizedChromaticOptions :: [[Int]]
+generalizedChromaticOptions =
+  [ [1, 1, 10],
+    [1, 2, 9],
+    [1, 3, 8],
+    [1, 4, 7],
+    [1, 5, 6],
+    [2, 2, 8],
+    [2, 3, 7],
+    [2, 4, 6],
+    [2, 5, 5],
+    [3, 4, 5],
+    [3, 3, 6],
+    [4, 4, 4]
+  ]
+
+generalizedModalOptions :: [[Int]]
+generalizedModalOptions =
+  nub (fmap (fmap (`mod` 7)) generalizedChromaticOptions)

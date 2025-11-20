@@ -767,9 +767,9 @@ occurrencesForPitchClasses fretboard maxFrets baseOctaves chromatics =
     computeOctave Nothing _ _ = Nothing
     computeOctave (Just baseOctave) openPitchClass fret =
       let openPcInt = fromIntegral (unMod openPitchClass)
-          total = openPcInt + fret
-          octaveOffset = total `div` 12
-       in Just (baseOctave + octaveOffset)
+          baseMidi = (baseOctave + 1) * 12 + openPcInt
+          midiValue = baseMidi + fret
+       in Just (midiValue `div` 12 - 1)
 
 cProgression :: [Set Chromatic]
 cProgression =

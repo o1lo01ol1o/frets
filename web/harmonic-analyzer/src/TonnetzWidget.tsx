@@ -97,6 +97,19 @@ const midiToNoteName = (midi: number): string => {
 };
 
 const clampMidi = (note: number): number => Math.max(0, Math.min(127, Math.round(note)));
+const clampVelocity = (value: number): number => Math.max(0, Math.min(127, Math.round(value)));
+
+const dedupeOrdered = <T,>(values: readonly T[]): T[] => {
+  const seen = new Set<T>();
+  const result: T[] = [];
+  values.forEach((value) => {
+    if (!seen.has(value)) {
+      seen.add(value);
+      result.push(value);
+    }
+  });
+  return result;
+};
 
 export type RecordedChord = {
   id: string;
@@ -123,6 +136,10 @@ type PlaybackOptionsPayload = {
     beatUnit: number;
   };
   tempoBpm?: number;
+  trimWindow?: {
+    startSeconds: number;
+    endSeconds: number;
+  };
 };
 
 type RenderedChordEvent = {
@@ -132,9 +149,35 @@ type RenderedChordEvent = {
   midiNotes: number[];
 };
 
+type TrimWindow = {
+  startSeconds: number;
+  endSeconds: number;
+};
+
+type RenderedPlaybackWindow = {
+  startSeconds: number;
+  endSeconds: number;
+};
+
+type RenderedBeatGrid = {
+  tempoBpm: number;
+  meterBeats: number;
+  meterBeatUnit: number;
+  startOffsetSeconds: number;
+  measureStarts: number[];
+  beatStarts: number[];
+  subdivisionStarts: number[];
+  subdivisionsPerBeat: number | null;
+};
+
+type PianoRollGridMode = "seconds" | "beat-subdivision";
+
 export type RenderedPlaybackResponse = {
   midiBase64: string;
   totalSeconds: number;
+  sourceTotalSeconds: number;
+  window: RenderedPlaybackWindow | null;
+  beatGrid: RenderedBeatGrid | null;
   events: RenderedChordEvent[];
 };
 
@@ -153,6 +196,20 @@ const QUANTIZATION_OPTIONS: Array<{ value: PlaybackQuantizationOption | "none"; 
 ] as const;
 
 const DEFAULT_TEMPO_BPM = 120;
+const TRIM_EPSILON = 1e-4;
+
+const KEYBOARD_NOTE_CODES: readonly string[] = [
+  "KeyA",
+  "KeyS",
+  "KeyD",
+  "KeyF",
+  "KeyG",
+  "KeyH",
+  "KeyJ",
+  "KeyK",
+  "KeyL",
+  "Semicolon"
+] as const;
 
 const resolveDefaultStructure = (
   structures: TonnetzStructureOptions[]
@@ -223,6 +280,7 @@ export function TonnetzWidget({
   const midiOpenPromiseRef = useRef<Promise<MidiOut | null> | null>(null);
   const midiMixerOpenPromiseRef = useRef<Promise<MidiOut | null> | null>(null);
   const selectedMixerOutputRef = useRef<string>(AUTO_MIXER_SELECTION);
+  const synthEnabledRef = useRef(true);
   const chordNameCacheRef = useRef<Map<string, ChordNameInfo>>(new Map());
   const recordedChordsRef = useRef<RecordedChord[]>([]);
   const recordingStartRef = useRef<number | null>(null);
@@ -238,19 +296,28 @@ export function TonnetzWidget({
     meterBeats: string;
     meterUnit: string;
     tempo: number;
+    trimStart: number | null;
+    trimEnd: number | null;
   }>({
     quantization: "none",
     meterBeats: "4",
     meterUnit: "4",
-    tempo: DEFAULT_TEMPO_BPM
+    tempo: DEFAULT_TEMPO_BPM,
+    trimStart: null,
+    trimEnd: null
   });
+  const activePolygonRef = useRef<TonnetzPolygonResponse | null>(null);
+  const pointerActiveRef = useRef(false);
+  const keyboardTriggerEnabledRef = useRef(false);
+  const pressedKeyboardNotesRef = useRef<Map<string, number>>(new Map());
+  const activeChordNotesRef = useRef<number[]>([]);
 
   const [options, setOptions] = useState<TonnetzStructureOptions[]>([]);
   const [structureId, setStructureId] = useState<string | null>(null);
   const [intervalId, setIntervalId] = useState<string | null>(null);
   const [degree, setDegree] = useState<string>("I");
   const [transposeSemitones, setTransposeSemitones] = useState(0);
-  const [activeControlTab, setActiveControlTab] = useState<"structure" | "transpose" | "mixer" | "render">("structure");
+  const [activeControlTab, setActiveControlTab] = useState<"structure" | "midi" | "render">("structure");
   const [tiling, setTiling] = useState<TonnetzTilingResponse | null>(null);
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [loadingTiling, setLoadingTiling] = useState(false);
@@ -258,6 +325,9 @@ export function TonnetzWidget({
   const [tilingError, setTilingError] = useState<string | null>(null);
   const [synthStatus, setSynthStatus] = useState<SynthStatus>("idle");
   const [synthError, setSynthError] = useState<string | null>(null);
+  const [synthEnabled, setSynthEnabled] = useState(true);
+  const [synthVolume, setSynthVolume] = useState<number>(110);
+  const [keyboardTriggerEnabled, setKeyboardTriggerEnabled] = useState(false);
   const [midiMixerStatus, setMidiMixerStatus] = useState<SynthStatus>("idle");
   const [midiMixerError, setMidiMixerError] = useState<string | null>(null);
   const [availableMixerOutputs, setAvailableMixerOutputs] = useState<string[]>([]);
@@ -272,6 +342,10 @@ export function TonnetzWidget({
   const [renderedPlayback, setRenderedPlayback] = useState<RenderedPlaybackResponse | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [isRenderingPlayback, setIsRenderingPlayback] = useState(false);
+  const [pendingTrimWindow, setPendingTrimWindow] = useState<TrimWindow | null>(null);
+  const [activeTrimWindow, setActiveTrimWindow] = useState<TrimWindow | null>(null);
+  const [gridOverlayMode, setGridOverlayMode] = useState<PianoRollGridMode>("seconds");
+  const [snapToSubdivision, setSnapToSubdivision] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
   const [currentChordDescription, setCurrentChordDescription] = useState<{
     name: string | null;
@@ -282,6 +356,8 @@ export function TonnetzWidget({
   } | null>(null);
   const [activeView, setActiveView] = useState<"tonnetz" | "piano-roll">("tonnetz");
   const [loopProgress, setLoopProgress] = useState(0);
+  const previousTransposeRef = useRef(transposeSemitones);
+  const synthVolumeRef = useRef(synthVolume);
 
   const hasRecordedSession =
     lastRecordingRef.current != null && lastRecordingRef.current.length > 0;
@@ -289,6 +365,18 @@ export function TonnetzWidget({
   useEffect(() => {
     selectedMixerOutputRef.current = selectedMixerOutput;
   }, [selectedMixerOutput]);
+
+  useEffect(() => {
+    synthEnabledRef.current = synthEnabled;
+  }, [synthEnabled]);
+
+  useEffect(() => {
+    keyboardTriggerEnabledRef.current = keyboardTriggerEnabled;
+  }, [keyboardTriggerEnabled]);
+
+  useEffect(() => {
+    synthVolumeRef.current = synthVolume;
+  }, [synthVolume]);
 
   const loopIterationStartRef = useRef<number | null>(null);
   const loopAnimationFrameRef = useRef<number | null>(null);
@@ -310,7 +398,28 @@ export function TonnetzWidget({
     [renderedPlayback]
   );
   const totalPlaybackSeconds = renderedPlayback?.totalSeconds ?? 0;
-  const hasRenderedPlayback = pianoRollEvents.length > 0;
+  const hasRenderedPlayback = renderedPlayback != null;
+  const synthStatusDescription = synthEnabled
+    ? synthStatus === "ready"
+      ? "Ready"
+      : synthStatus === "initializing"
+        ? "Initialising"
+        : synthStatus === "error"
+          ? `Error${synthError ? ` – ${synthError}` : ""}`
+          : "Idle"
+    : "Disabled";
+  const mixerStatusDescription =
+    midiMixerStatus === "ready"
+      ? selectedMixerOutput === NO_MIXER_SELECTION
+        ? "Disabled"
+        : "Ready"
+      : midiMixerStatus === "initializing"
+        ? "Initialising"
+        : midiMixerStatus === "error"
+          ? `Error${midiMixerError ? ` – ${midiMixerError}` : ""}`
+          : selectedMixerOutput === NO_MIXER_SELECTION
+            ? "Disabled"
+            : "Idle";
 
   useEffect(() => {
     if (!hasRenderedPlayback && activeView !== "tonnetz") {
@@ -375,6 +484,28 @@ export function TonnetzWidget({
     });
     activeMidiRef.current = null;
   }, []);
+
+  useEffect(() => {
+    if (synthEnabled) {
+      if (synthStatus === "error") {
+        setSynthStatus("idle");
+      }
+      setSynthError(null);
+      return;
+    }
+    stopChord();
+    if (midiOutRef.current) {
+      try {
+        midiOutRef.current.close();
+      } catch {
+        /* ignore */
+      }
+      midiOutRef.current = null;
+    }
+    midiOpenPromiseRef.current = null;
+    setSynthStatus("idle");
+    setSynthError(null);
+  }, [synthEnabled, synthStatus, stopChord]);
 
   const ensureMidiMixerOut = useCallback(async (): Promise<MidiOut | null> => {
     if (selectedMixerOutputRef.current === NO_MIXER_SELECTION) {
@@ -500,6 +631,9 @@ export function TonnetzWidget({
   }, []);
 
   const ensureMidiOut = useCallback(async (): Promise<MidiOut | null> => {
+    if (!synthEnabled) {
+      return null;
+    }
     if (midiOutRef.current) {
       return midiOutRef.current;
     }
@@ -550,7 +684,7 @@ export function TonnetzWidget({
     });
     midiOpenPromiseRef.current = promise;
     return promise;
-  }, []);
+  }, [synthEnabled]);
 
   useEffect(() => {
     if (selectedMixerOutput === NO_MIXER_SELECTION) {
@@ -618,29 +752,113 @@ export function TonnetzWidget({
       if (midiNotes.length === 0) {
         return;
       }
-      const outputs = [midiOutRef.current, midiMixerOutRef.current].filter(
-        (candidate): candidate is MidiOut => candidate != null
-      );
-      if (outputs.length === 0) {
+      const synthOutput = synthEnabled ? midiOutRef.current : null;
+      const mixerOutput = midiMixerOutRef.current;
+      if (!synthOutput && !mixerOutput) {
         return;
       }
       if (equalMidiSets(activeMidiRef.current, midiNotes)) {
         return;
       }
       stopChord();
-      outputs.forEach((out) => {
-        midiNotes.forEach((note) => {
+      const clampedNotes = midiNotes.map(clampMidi);
+      if (synthOutput) {
+        clampedNotes.forEach((note) => {
           try {
-            out.noteOn(MIDI_CHANNEL, clampMidi(note), 110);
+            synthOutput.noteOn(MIDI_CHANNEL, note, clampVelocity(synthVolume));
           } catch {
             /* ignore */
           }
         });
-      });
-      activeMidiRef.current = midiNotes.map(clampMidi);
+      }
+      if (mixerOutput) {
+        clampedNotes.forEach((note) => {
+          try {
+            mixerOutput.noteOn(MIDI_CHANNEL, note, 110);
+          } catch {
+            /* ignore */
+          }
+        });
+      }
+      activeMidiRef.current = clampedNotes;
     },
-    [stopChord]
+    [stopChord, synthEnabled, synthVolume]
   );
+
+  const playSingleNote = useCallback(
+    (note: number) => {
+      const midiNote = clampMidi(note);
+      if (synthEnabledRef.current && !midiOutRef.current) {
+        void ensureMidiOut().catch(() => {
+          /* ignore */
+        });
+      }
+      if (
+        selectedMixerOutputRef.current !== NO_MIXER_SELECTION &&
+        !midiMixerOutRef.current
+      ) {
+        void ensureMidiMixerOut().catch(() => {
+          /* ignore */
+        });
+      }
+      if (synthEnabledRef.current && midiOutRef.current) {
+        try {
+          midiOutRef.current.noteOn(
+            MIDI_CHANNEL,
+            midiNote,
+            clampVelocity(synthVolumeRef.current)
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+      if (midiMixerOutRef.current) {
+        try {
+          midiMixerOutRef.current.noteOn(MIDI_CHANNEL, midiNote, 110);
+        } catch {
+          /* ignore */
+        }
+      }
+      const existing = new Set(activeMidiRef.current ?? []);
+      if (!existing.has(midiNote)) {
+        existing.add(midiNote);
+        activeMidiRef.current = Array.from(existing).sort((a, b) => a - b);
+      }
+    },
+    [ensureMidiMixerOut, ensureMidiOut]
+  );
+
+  const releaseSingleNote = useCallback((note: number) => {
+    const midiNote = clampMidi(note);
+    if (synthEnabledRef.current && midiOutRef.current) {
+      try {
+        midiOutRef.current.noteOff(MIDI_CHANNEL, midiNote);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (midiMixerOutRef.current) {
+      try {
+        midiMixerOutRef.current.noteOff(MIDI_CHANNEL, midiNote);
+      } catch {
+        /* ignore */
+      }
+    }
+    const existing = new Set(activeMidiRef.current ?? []);
+    if (existing.delete(midiNote)) {
+      activeMidiRef.current = existing.size > 0 ? Array.from(existing).sort((a, b) => a - b) : null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!keyboardTriggerEnabled) {
+      pressedKeyboardNotesRef.current.clear();
+      if (activeChordNotesRef.current.length === 0) {
+        return;
+      }
+      stopChord();
+    }
+  }, [keyboardTriggerEnabled, stopChord]);
 
   const clearLoopTimeouts = useCallback(() => {
     loopTimeoutsRef.current.forEach((identifier) => {
@@ -648,6 +866,84 @@ export function TonnetzWidget({
     });
     loopTimeoutsRef.current = [];
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!keyboardTriggerEnabledRef.current) {
+        return;
+      }
+      if (!pointerActiveRef.current) {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      const notes = activeChordNotesRef.current;
+      if (notes.length === 0) {
+        return;
+      }
+
+      if (event.code === "Space") {
+        if (pressedKeyboardNotesRef.current.has("Space")) {
+          return;
+        }
+        event.preventDefault();
+        pressedKeyboardNotesRef.current.clear();
+        pressedKeyboardNotesRef.current.set("Space", -1);
+        playChord(notes);
+        return;
+      }
+
+      const keyIndex = KEYBOARD_NOTE_CODES.indexOf(event.code);
+      if (keyIndex === -1) {
+        return;
+      }
+      if (keyIndex >= notes.length) {
+        return;
+      }
+      if (pressedKeyboardNotesRef.current.has(event.code)) {
+        return;
+      }
+      event.preventDefault();
+      const note = notes[keyIndex];
+      playSingleNote(note);
+      pressedKeyboardNotesRef.current.set(event.code, note);
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (!keyboardTriggerEnabledRef.current) {
+        return;
+      }
+      if (event.code === "Space") {
+        if (!pressedKeyboardNotesRef.current.has("Space")) {
+          return;
+        }
+        event.preventDefault();
+        pressedKeyboardNotesRef.current.delete("Space");
+        stopChord();
+        return;
+      }
+      const note = pressedKeyboardNotesRef.current.get(event.code);
+      if (note == null) {
+        return;
+      }
+      event.preventDefault();
+      pressedKeyboardNotesRef.current.delete(event.code);
+      releaseSingleNote(note);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [playChord, playSingleNote, releaseSingleNote, stopChord]);
 
   const updateLoopProgress = useCallback(() => {
     const playback = renderedPlaybackRef.current;
@@ -678,10 +974,10 @@ export function TonnetzWidget({
       if (!isLoopingRef.current) {
         return;
       }
-      const outputs = [synthOut, mixerOut].filter(
-        (candidate): candidate is MidiOut => candidate != null
-      );
-      if (outputs.length === 0) {
+      const allowSynth = synthEnabledRef.current;
+      const activeSynthOut = allowSynth ? synthOut : null;
+      const activeMixerOut = mixerOut ?? null;
+      if (!activeSynthOut && !activeMixerOut) {
         setPlaybackError("No MIDI outputs available for loop playback.");
         isLoopingRef.current = false;
         setIsLooping(false);
@@ -707,26 +1003,40 @@ export function TonnetzWidget({
           }
           activeLoopEventRef.current = eventIndex;
           onLoopEvent?.({ index: eventIndex, active: true });
-          outputs.forEach((out) => {
-            notes.forEach((note) => {
+          notes.forEach((note) => {
+            if (synthEnabledRef.current && activeSynthOut) {
               try {
-                out.noteOn(MIDI_CHANNEL, note, 110);
-                loopActiveNotesRef.current.add(note);
+                activeSynthOut.noteOn(MIDI_CHANNEL, note, clampVelocity(synthVolume));
               } catch {
                 /* ignore */
               }
-            });
+            }
+            if (activeMixerOut) {
+              try {
+                activeMixerOut.noteOn(MIDI_CHANNEL, note, 110);
+              } catch {
+                /* ignore */
+              }
+            }
+            loopActiveNotesRef.current.add(note);
           });
         });
         queueTimeout(onsetMs + durationMs, () => {
-          outputs.forEach((out) => {
-            notes.forEach((note) => {
+          notes.forEach((note) => {
+            if (synthEnabledRef.current && activeSynthOut) {
               try {
-                out.noteOff(MIDI_CHANNEL, note);
+                activeSynthOut.noteOff(MIDI_CHANNEL, note);
               } catch {
                 /* ignore */
               }
-            });
+            }
+            if (activeMixerOut) {
+              try {
+                activeMixerOut.noteOff(MIDI_CHANNEL, note);
+              } catch {
+                /* ignore */
+              }
+            }
           });
           notes.forEach((note) => {
             loopActiveNotesRef.current.delete(note);
@@ -750,7 +1060,8 @@ export function TonnetzWidget({
       setPlaybackError,
       setIsLooping,
       updateLoopProgress,
-      setLoopProgress
+      setLoopProgress,
+      synthVolume
     ]
   );
 
@@ -814,6 +1125,80 @@ export function TonnetzWidget({
   const handleLoopStop = useCallback(() => {
     stopLoopPlayback();
   }, [stopLoopPlayback]);
+
+  const handlePendingTrimWindowChange = useCallback((next: TrimWindow) => {
+    setPendingTrimWindow(next);
+  }, []);
+
+  const handleApplyTrimWindow = useCallback(() => {
+    const playback = renderedPlaybackRef.current ?? renderedPlayback;
+    if (!playback) {
+      return;
+    }
+    const total = playback.sourceTotalSeconds;
+    const current = pendingTrimWindow ?? {
+      startSeconds: 0,
+      endSeconds: total
+    };
+    const safeStart = Math.max(0, Math.min(current.startSeconds, total));
+    const safeEnd = Math.max(safeStart, Math.min(current.endSeconds, total));
+    const normalizedWindow = {
+      startSeconds: Number(safeStart.toFixed(4)),
+      endSeconds: Number(safeEnd.toFixed(4))
+    };
+    setPendingTrimWindow(normalizedWindow);
+    const isFullRange =
+      normalizedWindow.startSeconds <= TRIM_EPSILON &&
+      Math.abs(normalizedWindow.endSeconds - total) <= TRIM_EPSILON;
+    if (isFullRange) {
+      if (activeTrimWindow != null) {
+        setActiveTrimWindow(null);
+      }
+      return;
+    }
+    if (
+      activeTrimWindow &&
+      Math.abs(activeTrimWindow.startSeconds - normalizedWindow.startSeconds) <= TRIM_EPSILON &&
+      Math.abs(activeTrimWindow.endSeconds - normalizedWindow.endSeconds) <= TRIM_EPSILON
+    ) {
+      return;
+    }
+    setActiveTrimWindow(normalizedWindow);
+  }, [activeTrimWindow, pendingTrimWindow, renderedPlayback]);
+
+  const handleResetTrimWindow = useCallback(() => {
+    const playback = renderedPlaybackRef.current ?? renderedPlayback;
+    if (!playback) {
+      setPendingTrimWindow(null);
+      setActiveTrimWindow(null);
+      return;
+    }
+    const total = playback.sourceTotalSeconds;
+    const resetWindow = { startSeconds: 0, endSeconds: total };
+    setPendingTrimWindow(resetWindow);
+    setActiveTrimWindow(null);
+  }, [renderedPlayback]);
+
+  const handleGridModeChange = useCallback(
+    (mode: PianoRollGridMode) => {
+      if (mode === "beat-subdivision" && !(renderedPlayback?.beatGrid)) {
+        setGridOverlayMode("seconds");
+        return;
+      }
+      setGridOverlayMode(mode);
+    },
+    [renderedPlayback]
+  );
+
+  const handleSnapToSubdivisionChange = useCallback(
+    (value: boolean) => {
+      if (value && !(renderedPlayback?.beatGrid)) {
+        return;
+      }
+      setSnapToSubdivision(value);
+    },
+    [renderedPlayback]
+  );
 
   useEffect(() => {
     return () => {
@@ -890,6 +1275,14 @@ export function TonnetzWidget({
       if (meterPayload) {
         optionsPayload.loopMeter = meterPayload;
       }
+      if (activeTrimWindow) {
+        const startSeconds = Math.max(0, activeTrimWindow.startSeconds);
+        const endCandidate = Math.max(startSeconds + 0.001, activeTrimWindow.endSeconds);
+        optionsPayload.trimWindow = {
+          startSeconds: Number(startSeconds.toFixed(4)),
+          endSeconds: Number(endCandidate.toFixed(4))
+        };
+      }
       try {
         const response = await fetch(
           `${trimmedUrl.replace(/\/+$/, "")}/tonnetz/recording/render`,
@@ -919,6 +1312,24 @@ export function TonnetzWidget({
           );
         }
         const data = (await response.json()) as RenderedPlaybackResponse;
+        const trimmedWindow =
+          data.window != null
+            ? {
+                startSeconds: data.window.startSeconds,
+                endSeconds: data.window.endSeconds
+              }
+            : null;
+        setActiveTrimWindow(trimmedWindow);
+        setPendingTrimWindow(
+          trimmedWindow ?? {
+            startSeconds: 0,
+            endSeconds: data.sourceTotalSeconds
+          }
+        );
+        if (!data.beatGrid) {
+          setGridOverlayMode("seconds");
+          setSnapToSubdivision(false);
+        }
         setRenderedPlayback(data);
         setPlaybackError(null);
       } catch (error) {
@@ -929,12 +1340,24 @@ export function TonnetzWidget({
           error instanceof Error ? error.message : "Failed to render loop playback.";
         setPlaybackError(message);
         setRenderedPlayback(null);
+        setActiveTrimWindow(null);
+        setPendingTrimWindow(null);
+        setGridOverlayMode("seconds");
+        setSnapToSubdivision(false);
       } finally {
         setIsRenderingPlayback(false);
         playbackAbortRef.current = null;
       }
     },
-    [meterBeatsInput, meterUnitInput, quantizationOption, serverUrl, stopLoopPlayback, tempoBpm]
+    [
+      activeTrimWindow,
+      meterBeatsInput,
+      meterUnitInput,
+      quantizationOption,
+      serverUrl,
+      stopLoopPlayback,
+      tempoBpm
+    ]
   );
 
   const startRecordingSession = useCallback(() => {
@@ -942,6 +1365,10 @@ export function TonnetzWidget({
     resetRecordingState();
     setRenderedPlayback(null);
     setPlaybackError(null);
+    setActiveTrimWindow(null);
+    setPendingTrimWindow(null);
+    setGridOverlayMode("seconds");
+    setSnapToSubdivision(false);
     setRecordedChords([]);
     lastRecordingRef.current = null;
     const start = performance.now();
@@ -972,6 +1399,10 @@ export function TonnetzWidget({
     if (recordedChordEvents.length === 0) {
       setPlaybackError("No chords were captured during this recording.");
       setRenderedPlayback(null);
+      setActiveTrimWindow(null);
+      setPendingTrimWindow(null);
+      setGridOverlayMode("seconds");
+      setSnapToSubdivision(false);
       return;
     }
     lastRecordingRef.current = snapshot;
@@ -1030,8 +1461,63 @@ export function TonnetzWidget({
 
   useEffect(() => {
     stopChord();
+    stopLoopPlayback();
     setCurrentChordDescription(null);
-  }, [transposeSemitones, stopChord]);
+
+    const previous = previousTransposeRef.current;
+    if (transposeSemitones === previous) {
+      return;
+    }
+
+    const delta = transposeSemitones - previous;
+    previousTransposeRef.current = transposeSemitones;
+
+    if (delta === 0) {
+      return;
+    }
+
+    const hasServerUrl = serverUrl.trim().length > 0;
+
+    setRecordedChords((prev) => {
+      if (prev.length === 0) {
+        return prev;
+      }
+      return prev.map((entry) => {
+        const transposedMidi = entry.midiNotes.map((note) => clampMidi(note + delta));
+        const pitchClassNames = dedupeOrdered(
+          transposedMidi.map((note) => pitchClassNameFromNumber(note))
+        );
+        const noteNames = dedupeOrdered(transposedMidi.map((note) => midiToNoteName(note)));
+        return {
+          ...entry,
+          midiNotes: transposedMidi,
+          pitchClassNames,
+          noteNames,
+          transpose: entry.transpose + delta
+        };
+      });
+    });
+
+    if (recordingEventsRef.current.length > 0) {
+      recordingEventsRef.current = recordingEventsRef.current.map((event) =>
+        event.type === "chord-on"
+          ? { ...event, notes: event.notes.map((note) => clampMidi(note + delta)) }
+          : event
+      );
+    }
+
+    if (lastRecordingRef.current && lastRecordingRef.current.length > 0) {
+      const updatedSnapshot = lastRecordingRef.current.map((event) =>
+        event.type === "chord-on"
+          ? { ...event, notes: event.notes.map((note) => clampMidi(note + delta)) }
+          : event
+      );
+      lastRecordingRef.current = updatedSnapshot;
+      if (!isRecording && hasServerUrl) {
+        void submitRecording(updatedSnapshot);
+      }
+    }
+  }, [transposeSemitones, stopChord, stopLoopPlayback, isRecording, submitRecording, serverUrl]);
 
   useEffect(() => {
     if (!serverUrl) {
@@ -1187,19 +1673,7 @@ export function TonnetzWidget({
 
   const buildChordLabels = useCallback(
     (polygon: TonnetzPolygonResponse, transpose: number) => {
-      const dedupe = <T,>(values: T[]): T[] => {
-        const seen = new Set<T>();
-        const result: T[] = [];
-        values.forEach((value) => {
-          if (!seen.has(value)) {
-            seen.add(value);
-            result.push(value);
-          }
-        });
-        return result;
-      };
-
-      const pitchClassNames = dedupe(
+      const pitchClassNames = dedupeOrdered(
         polygon.vertexCoordinates.map((coord, index) => {
           const vertex = vertexByCoordinate.get(coordinateKey(coord));
           if (vertex) {
@@ -1210,7 +1684,7 @@ export function TonnetzWidget({
         })
       );
 
-      const noteNames = dedupe(
+      const noteNames = dedupeOrdered(
         polygon.vertexCoordinates.map((coord, index) => {
           const vertex = vertexByCoordinate.get(coordinateKey(coord));
           if (vertex) {
@@ -1324,7 +1798,10 @@ export function TonnetzWidget({
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) {
+    if (!container || activeView !== "tonnetz") {
+      if (container) {
+        d3.select(container).selectAll("svg").remove();
+      }
       return;
     }
     d3.select(container).selectAll("svg").remove();
@@ -1340,35 +1817,98 @@ export function TonnetzWidget({
     if (xExtent[0] === undefined || xExtent[1] === undefined || yExtent[0] === undefined || yExtent[1] === undefined) {
       return;
     }
-    const width = SVG_SIZE;
-    const height = SVG_SIZE;
-    const innerWidth = width - SVG_PADDING * 2;
-    const innerHeight = height - SVG_PADDING * 2;
+    const xMin = xExtent[0]!;
+    const xMax = xExtent[1]!;
+    const yMin = yExtent[0]!;
+    const yMax = yExtent[1]!;
+    const spanX = xMax - xMin || 1;
+    const spanY = yMax - yMin || 1;
 
-    const xScale = d3.scaleLinear().domain([xExtent[0], xExtent[1]]).range([0, innerWidth]);
-    const yScale = d3.scaleLinear().domain([yExtent[1], yExtent[0]]).range([0, innerHeight]);
+    const structureLabel = (tiling.structure ?? "").toLowerCase();
+    const isGeneralized = structureLabel.includes("generalized");
+    const isTetrad = structureLabel.includes("tetrad");
+
+    const containerRect = container.getBoundingClientRect();
+    let measuredWidth = Number.isFinite(containerRect.width) ? containerRect.width : SVG_SIZE;
+    let measuredHeight = Number.isFinite(containerRect.height) ? containerRect.height : SVG_SIZE;
+    if (measuredWidth <= 0) {
+      measuredWidth = SVG_SIZE;
+    }
+    if (measuredHeight <= 0) {
+      measuredHeight = measuredWidth;
+    }
+
+    let width = isGeneralized ? measuredWidth : Math.max(measuredWidth, SVG_SIZE);
+    let height = isGeneralized ? measuredHeight : Math.max(measuredHeight, SVG_SIZE);
+
+    const effectivePadding = isGeneralized ? 0 : SVG_PADDING;
+    let innerWidth = Math.max(width - effectivePadding * 2, 1);
+    let innerHeight = Math.max(height - effectivePadding * 2, 1);
+
+    let scaleMultiplier = isGeneralized ? 1 : 2.25;
+    if (isTetrad) {
+      scaleMultiplier *= 0.5;
+    }
+
+    let scale: number;
+
+    if (isGeneralized) {
+      const availableInnerWidth = innerWidth;
+      scale = availableInnerWidth / spanX;
+      const requiredInnerHeight = spanY * scale;
+      innerHeight = Math.max(requiredInnerHeight, 1);
+      height = innerHeight + effectivePadding * 2;
+      width = availableInnerWidth + effectivePadding * 2;
+      innerWidth = availableInnerWidth;
+    } else {
+      let baseScale = Math.min(innerWidth / spanX, innerHeight / spanY);
+      scale = baseScale * scaleMultiplier;
+
+      const requiredInnerWidth = spanX * scale;
+      const requiredInnerHeight = spanY * scale;
+      if (requiredInnerWidth > innerWidth) {
+        innerWidth = requiredInnerWidth;
+        width = innerWidth + effectivePadding * 2;
+      }
+      if (requiredInnerHeight > innerHeight) {
+        innerHeight = requiredInnerHeight;
+        height = innerHeight + effectivePadding * 2;
+      }
+
+      baseScale = Math.min(innerWidth / spanX, innerHeight / spanY);
+      scale = Math.min(scale, baseScale);
+    }
+
+    const offsetX = (innerWidth - spanX * scale) / 2;
+    const offsetY = (innerHeight - spanY * scale) / 2;
+    const projectX = (value: number) => offsetX + (value - xMin) * scale;
+    const projectY = (value: number) => offsetY + (yMax - value) * scale;
 
     const svg = d3
       .select(container)
       .append("svg")
       .attr("width", width)
       .attr("height", height)
-      .attr("class", "tonnetz-svg");
+      .attr("viewBox", isGeneralized ? `0 0 ${width} ${height}` : null)
+      .attr("preserveAspectRatio", isGeneralized ? "xMidYMid meet" : null)
+      .attr("class", "tonnetz-svg")
+      .style("width", isGeneralized ? "100%" : null)
+      .style("height", isGeneralized ? "auto" : null);
 
     svgRef.current = svg.node();
 
     const root = svg
       .append("g")
       .attr("class", "tonnetz-root")
-      .attr("transform", `translate(${SVG_PADDING}, ${SVG_PADDING})`);
+      .attr("transform", `translate(${effectivePadding}, ${effectivePadding})`);
 
     const polygonLayer = root.append("g").attr("class", "tonnetz-polygons");
     const vertexLayer = root.append("g").attr("class", "tonnetz-vertices");
 
     const lineGenerator = d3
       .line<[number, number]>()
-      .x((d) => xScale(d[0]))
-      .y((d) => yScale(d[1]))
+      .x((d) => projectX(d[0]))
+      .y((d) => projectY(d[1]))
       .curve(d3.curveLinearClosed);
 
     const colorScale = d3.scaleSequential(d3.interpolatePuBuGn).domain([0, 1]);
@@ -1397,8 +1937,8 @@ export function TonnetzWidget({
       .selectAll<SVGCircleElement, VertexRenderDatum>("circle")
       .data(vertexData)
       .join("circle")
-      .attr("cx", (d) => xScale(d.position[0]))
-      .attr("cy", (d) => yScale(d.position[1]))
+      .attr("cx", (d) => projectX(d.position[0]))
+      .attr("cy", (d) => projectY(d.position[1]))
       .attr("r", 10)
       .attr("stroke", "#4b5563")
       .attr("stroke-width", 1.5)
@@ -1408,8 +1948,8 @@ export function TonnetzWidget({
       .selectAll<SVGTextElement, VertexRenderDatum>("text")
       .data(vertexData)
       .join("text")
-      .attr("x", (d) => xScale(d.position[0]))
-      .attr("y", (d) => yScale(d.position[1]) + 3)
+      .attr("x", (d) => projectX(d.position[0]))
+      .attr("y", (d) => projectY(d.position[1]) + 3)
       .attr("text-anchor", "middle")
       .attr("font-size", "11px")
       .attr("fill", "#374151")
@@ -1454,7 +1994,12 @@ export function TonnetzWidget({
         aliases: []
       };
       stopLoopPlayback();
+      stopChord();
+      pressedKeyboardNotesRef.current.clear();
+      pointerActiveRef.current = true;
       activePolygon = polygon;
+      activePolygonRef.current = polygon;
+      activeChordNotesRef.current = transposedMidi;
       updatePolygonStyles(polygon);
       setCurrentChordDescription({
         name: fallbackInfo.name,
@@ -1473,7 +2018,9 @@ export function TonnetzWidget({
           if (!synthOut && !mixerOut) {
             return;
           }
-          playChord(transposedMidi);
+          if (!keyboardTriggerEnabledRef.current) {
+            playChord(transposedMidi);
+          }
         })
         .catch(() => {
           /* ignore synth initialisation errors here */
@@ -1515,6 +2062,10 @@ export function TonnetzWidget({
     const clearActive = () => {
       activePolygon = null;
       pointerDown = false;
+      pointerActiveRef.current = false;
+      activePolygonRef.current = null;
+      activeChordNotesRef.current = [];
+      pressedKeyboardNotesRef.current.clear();
       updatePolygonStyles(null);
       stopChord();
       if (recordingStartRef.current != null) {
@@ -1526,6 +2077,7 @@ export function TonnetzWidget({
     polygonSelection.on("pointerdown", (event, polygon) => {
       event.preventDefault();
       pointerDown = true;
+      pointerActiveRef.current = true;
       activatePolygon(polygon);
     });
 
@@ -1543,7 +2095,23 @@ export function TonnetzWidget({
       clearActive();
       svg.remove();
     };
-  }, [tiling, playChord, stopChord, vertexPositionLookup, synthStatus, buildChordLabels, recordChord, fetchChordName, ensureMidiOut, ensureMidiMixerOut, transposeSemitones, endActiveChord, stopLoopPlayback]);
+  }, [
+    tiling,
+    playChord,
+    stopChord,
+    vertexPositionLookup,
+    synthStatus,
+    buildChordLabels,
+    recordChord,
+    fetchChordName,
+    ensureMidiOut,
+    ensureMidiMixerOut,
+    transposeSemitones,
+    endActiveChord,
+    stopLoopPlayback,
+    activeView,
+    keyboardTriggerEnabled
+  ]);
 
   const structureOptions = options;
   const intervalOptions =
@@ -1551,6 +2119,22 @@ export function TonnetzWidget({
   const activeStructure = structureOptions.find((candidate) => candidate.id === structureId) ?? null;
   const activeInterval = intervalOptions.find((entry) => entry.id === intervalId) ?? null;
   const activeIntervalSteps = activeInterval ? activeInterval.steps.join("-") : null;
+  const structureInterpretation = useMemo(() => {
+    if (!activeStructure) {
+      return null;
+    }
+    if (/modal/i.test(activeStructure.label)) {
+      return "Modal (scale degrees)";
+    }
+    if (/chromatic/i.test(activeStructure.label)) {
+      return "Chromatic (semitones)";
+    }
+    return null;
+  }, [activeStructure]);
+  const structureSummary =
+    activeInterval != null
+      ? `${activeInterval.label}${activeIntervalSteps ? ` (${activeIntervalSteps})` : ""}`
+      : "—";
 
   const toggleRecording = () => {
     if (isRecording) {
@@ -1576,11 +2160,17 @@ export function TonnetzWidget({
 
   useEffect(() => {
     const previous = previousPlaybackOptionsRef.current;
+    const appliedTrimStart =
+      activeTrimWindow != null ? Number(activeTrimWindow.startSeconds.toFixed(4)) : null;
+    const appliedTrimEnd =
+      activeTrimWindow != null ? Number(activeTrimWindow.endSeconds.toFixed(4)) : null;
     if (
       previous.quantization === quantizationOption &&
       previous.meterBeats === meterBeatsInput &&
       previous.meterUnit === meterUnitInput &&
-      previous.tempo === tempoBpm
+      previous.tempo === tempoBpm &&
+      previous.trimStart === appliedTrimStart &&
+      previous.trimEnd === appliedTrimEnd
     ) {
       return;
     }
@@ -1588,7 +2178,9 @@ export function TonnetzWidget({
       quantization: quantizationOption,
       meterBeats: meterBeatsInput,
       meterUnit: meterUnitInput,
-      tempo: tempoBpm
+      tempo: tempoBpm,
+      trimStart: appliedTrimStart,
+      trimEnd: appliedTrimEnd
     };
     if (isRecording || isRenderingPlayback) {
       return;
@@ -1605,7 +2197,8 @@ export function TonnetzWidget({
     meterUnitInput,
     quantizationOption,
     submitRecording,
-    tempoBpm
+    tempoBpm,
+    activeTrimWindow
   ]);
 
   const clearRecorded = () => {
@@ -1616,6 +2209,10 @@ export function TonnetzWidget({
     setRecordedChords([]);
     setRenderedPlayback(null);
     setPlaybackError(null);
+    setActiveTrimWindow(null);
+    setPendingTrimWindow(null);
+    setGridOverlayMode("seconds");
+    setSnapToSubdivision(false);
     resetRecordingState();
     lastRecordingRef.current = null;
   };
@@ -1636,21 +2233,12 @@ export function TonnetzWidget({
             </button>
             <button
               type="button"
-              className={activeControlTab === "transpose" ? "tonnetz-controls-tab active" : "tonnetz-controls-tab"}
+              className={activeControlTab === "midi" ? "tonnetz-controls-tab active" : "tonnetz-controls-tab"}
               role="tab"
-              aria-selected={activeControlTab === "transpose"}
-              onClick={() => setActiveControlTab("transpose")}
+              aria-selected={activeControlTab === "midi"}
+              onClick={() => setActiveControlTab("midi")}
             >
-              Transpose
-            </button>
-            <button
-              type="button"
-              className={activeControlTab === "mixer" ? "tonnetz-controls-tab active" : "tonnetz-controls-tab"}
-              role="tab"
-              aria-selected={activeControlTab === "mixer"}
-              onClick={() => setActiveControlTab("mixer")}
-            >
-              Mixer
+              MIDI
             </button>
             <button
               type="button"
@@ -1666,36 +2254,38 @@ export function TonnetzWidget({
           <div className="tonnetz-controls-panels">
             {activeControlTab === "structure" && (
               <div className="tonnetz-controls-panel" role="tabpanel" aria-label="Structure controls">
-                <div className="field">
-                  <label htmlFor="tonnetz-structure">Structure</label>
-                  <select
-                    id="tonnetz-structure"
-                    value={structureId ?? ""}
-                    onChange={(event) => setStructureId(event.target.value)}
-                    disabled={loadingOptions || options.length === 0}
-                  >
-                    {structureOptions.map((structure) => (
-                      <option key={structure.id} value={structure.id}>
-                        {structure.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <div className="tonnetz-type-structure">
+                  <div className="field">
+                    <label htmlFor="tonnetz-type">Tonnetz Type</label>
+                    <select
+                      id="tonnetz-type"
+                      value={structureId ?? ""}
+                      onChange={(event) => setStructureId(event.target.value)}
+                      disabled={loadingOptions || options.length === 0}
+                    >
+                      {structureOptions.map((structure) => (
+                        <option key={structure.id} value={structure.id}>
+                          {structure.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div className="field">
-                  <label htmlFor="tonnetz-interval">Interval Set</label>
-                  <select
-                    id="tonnetz-interval"
-                    value={intervalId ?? ""}
-                    onChange={(event) => setIntervalId(event.target.value)}
-                    disabled={loadingOptions || intervalOptions.length === 0}
-                  >
-                    {intervalOptions.map((interval) => (
-                      <option key={interval.id} value={interval.id}>
-                        {interval.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="field">
+                    <label htmlFor="tonnetz-structure">Structure</label>
+                    <select
+                      id="tonnetz-structure"
+                      value={intervalId ?? ""}
+                      onChange={(event) => setIntervalId(event.target.value)}
+                      disabled={loadingOptions || intervalOptions.length === 0}
+                    >
+                      {intervalOptions.map((interval) => (
+                        <option key={interval.id} value={interval.id}>
+                          {interval.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div className="field">
@@ -1718,69 +2308,67 @@ export function TonnetzWidget({
                   <div>
                     <strong>Structure:</strong> {activeStructure?.label ?? "—"}
                   </div>
+                  {structureInterpretation && (
+                    <div>
+                      <strong>Interpretation:</strong> {structureInterpretation}
+                    </div>
+                  )}
                   <div>
-                    <strong>Interval Set:</strong> {activeIntervalSteps ?? "—"}
+                    <strong>Structure:</strong> {structureSummary}
                   </div>
                   <div>
-                    <strong>Scale Degree:</strong> {degree}
+                    <strong>Degree:</strong> {degree}
                   </div>
                 </div>
               </div>
             )}
-
-            {activeControlTab === "transpose" && (
-              <div className="tonnetz-controls-panel" role="tabpanel" aria-label="Transpose controls">
-                <div className="field tonnetz-transpose">
-                  <label htmlFor="tonnetz-transpose">Transpose (semitones)</label>
-                  <div className="tonnetz-transpose-controls">
-                    <button
-                      type="button"
-                      className="tonnetz-transpose-step"
-                      onClick={() => setTransposeSemitones((value) => value - 1)}
-                    >
-                      –
-                    </button>
+            {activeControlTab === "midi" && (
+              <div className="tonnetz-controls-panel" role="tabpanel" aria-label="MIDI controls">
+                <div className="field tonnetz-synth-toggle">
+                  <label className="tonnetz-toggle">
                     <input
-                      id="tonnetz-transpose"
-                      type="number"
-                      step={1}
-                      value={transposeSemitones}
+                      type="checkbox"
+                      checked={synthEnabled}
+                      onChange={(event) => setSynthEnabled(event.target.checked)}
+                    />{" "}
+                    Enable built-in synth
+                  </label>
+                </div>
+                <div className="field tonnetz-synth-volume">
+                  <label htmlFor="tonnetz-synth-volume">
+                    Synth volume
+                    <input
+                      id="tonnetz-synth-volume"
+                      type="range"
+                      min={0}
+                      max={127}
+                      value={synthVolume}
                       onChange={(event) => {
                         const value = Number.parseInt(event.target.value, 10);
-                        if (!Number.isNaN(value)) {
-                          setTransposeSemitones(value);
-                        }
+                        setSynthVolume(Number.isNaN(value) ? 0 : clampVelocity(value));
                       }}
-                      aria-label="Transpose in semitones"
+                      disabled={!synthEnabled}
                     />
-                    <button
-                      type="button"
-                      className="tonnetz-transpose-step"
-                      onClick={() => setTransposeSemitones((value) => value + 1)}
-                    >
-                      +
-                    </button>
-                    <button
-                      type="button"
-                      className="tonnetz-transpose-reset"
-                      onClick={() => setTransposeSemitones(0)}
-                    >
-                      Reset
-                    </button>
-                  </div>
+                    <span className="tonnetz-volume-value">{synthVolume}</span>
+                  </label>
                 </div>
-                <div className="tonnetz-control-summary">
-                  <strong>Current transpose:</strong> {transposeSemitones > 0 ? `+${transposeSemitones}` : transposeSemitones} st
+                <div className="field tonnetz-synth-toggle">
+                  <label className="tonnetz-toggle">
+                    <input
+                      type="checkbox"
+                      checked={keyboardTriggerEnabled}
+                      onChange={(event) => setKeyboardTriggerEnabled(event.target.checked)}
+                    />{" "}
+                    Use computer keyboard while holding a chord
+                  </label>
+                  <p className="tonnetz-field-help">
+                    Hold the mouse on a chord, press A–; for individual notes, space for the full chord.
+                  </p>
                 </div>
-              </div>
-            )}
-
-            {activeControlTab === "mixer" && (
-              <div className="tonnetz-controls-panel" role="tabpanel" aria-label="Mixer controls">
                 <div className="field">
-                  <label htmlFor="tonnetz-mixer-output">Mixer Output</label>
+                  <label htmlFor="tonnetz-external-output">External MIDI output</label>
                   <select
-                    id="tonnetz-mixer-output"
+                    id="tonnetz-external-output"
                     value={selectedMixerOutput}
                     onChange={(event) => setSelectedMixerOutput(event.target.value)}
                   >
@@ -1795,28 +2383,10 @@ export function TonnetzWidget({
                 </div>
                 <div className="tonnetz-control-summary">
                   <div>
-                    <strong>Synth:</strong>{" "}
-                    {synthStatus === "ready"
-                      ? "Ready"
-                      : synthStatus === "initializing"
-                        ? "Initialising"
-                        : synthStatus === "error"
-                          ? `Error${synthError ? ` – ${synthError}` : ""}`
-                          : "Idle"}
+                    <strong>Synth:</strong> {synthStatusDescription}
                   </div>
                   <div>
-                    <strong>Mixer:</strong>{" "}
-                    {midiMixerStatus === "ready"
-                      ? selectedMixerOutput === NO_MIXER_SELECTION
-                        ? "Disabled"
-                        : "Ready"
-                      : midiMixerStatus === "initializing"
-                        ? "Initialising"
-                        : midiMixerStatus === "error"
-                          ? `Error${midiMixerError ? ` – ${midiMixerError}` : ""}`
-                          : selectedMixerOutput === NO_MIXER_SELECTION
-                            ? "Disabled"
-                            : "Idle"}
+                    <strong>External:</strong> {mixerStatusDescription}
                   </div>
                 </div>
               </div>
@@ -1914,6 +2484,59 @@ export function TonnetzWidget({
             )}
           </div>
         </div>
+        <div className="tonnetz-transpose-section">
+          <div
+            className="tonnetz-controls-panel tonnetz-transpose-panel"
+            role="region"
+            aria-label="Transpose controls"
+          >
+            <div className="field tonnetz-transpose">
+              <label htmlFor="tonnetz-transpose">Transpose (semitones)</label>
+              <div className="tonnetz-transpose-controls">
+                <button
+                  type="button"
+                  className="tonnetz-transpose-step"
+                  onClick={() => setTransposeSemitones((value) => value - 1)}
+                >
+                  –
+                </button>
+                <input
+                  id="tonnetz-transpose"
+                  type="number"
+                  step={1}
+                  value={transposeSemitones}
+                  onChange={(event) => {
+                    const value = Number.parseInt(event.target.value, 10);
+                    if (Number.isNaN(value)) {
+                      setTransposeSemitones(0);
+                      return;
+                    }
+                    setTransposeSemitones(value);
+                  }}
+                  aria-label="Transpose in semitones"
+                />
+                <button
+                  type="button"
+                  className="tonnetz-transpose-step"
+                  onClick={() => setTransposeSemitones((value) => value + 1)}
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  className="tonnetz-transpose-reset"
+                  onClick={() => setTransposeSemitones(0)}
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+            <div className="tonnetz-control-summary">
+              <strong>Current transpose:</strong>{" "}
+              {transposeSemitones > 0 ? `+${transposeSemitones}` : transposeSemitones} st
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="tonnetz-record-controls">
@@ -1922,7 +2545,7 @@ export function TonnetzWidget({
             type="button"
             className={isRecording ? "tonnetz-record-button active" : "tonnetz-record-button"}
             onClick={toggleRecording}
-            disabled={synthStatus !== "ready"}
+            disabled={synthEnabled && synthStatus !== "ready"}
           >
             {isRecording ? "Stop Recording" : "Record"}
           </button>
@@ -1932,32 +2555,8 @@ export function TonnetzWidget({
         </div>
 
         <div className="tonnetz-record-section tonnetz-status-section">
-          <span className="tonnetz-synth-status">
-            Synth: {
-              synthStatus === "ready"
-                ? "Ready"
-                : synthStatus === "initializing"
-                  ? "Initialising"
-                  : synthStatus === "error"
-                    ? `Error${synthError ? ` – ${synthError}` : ""}`
-                    : "Idle"
-            }
-          </span>
-          <span className="tonnetz-mixer-status">
-            Mixer: {
-              midiMixerStatus === "ready"
-                ? selectedMixerOutput === NO_MIXER_SELECTION
-                  ? "Disabled"
-                  : "Ready"
-                : midiMixerStatus === "initializing"
-                  ? "Initialising"
-                  : midiMixerStatus === "error"
-                    ? `Error${midiMixerError ? ` – ${midiMixerError}` : ""}`
-                    : selectedMixerOutput === NO_MIXER_SELECTION
-                      ? "Disabled"
-                      : "Idle"
-            }
-          </span>
+          <span className="tonnetz-synth-status">Synth: {synthStatusDescription}</span>
+          <span className="tonnetz-mixer-status">External: {mixerStatusDescription}</span>
           {isRenderingPlayback && <div className="status info">Rendering loop…</div>}
           {playbackError && <div className="status error">{playbackError}</div>}
           {renderedPlayback && !isRenderingPlayback && !playbackError && (
@@ -2024,6 +2623,7 @@ export function TonnetzWidget({
               <PianoRollView
                 events={pianoRollEvents}
                 totalSeconds={totalPlaybackSeconds}
+                sourceTotalSeconds={renderedPlayback?.sourceTotalSeconds ?? totalPlaybackSeconds}
                 progress={loopProgress}
                 isPlaying={isLooping}
                 onPlay={handleLoopPlay}
@@ -2033,6 +2633,17 @@ export function TonnetzWidget({
                     ? `data:audio/midi;base64,${renderedPlayback.midiBase64}`
                     : null
                 }
+                beatGrid={renderedPlayback?.beatGrid ?? null}
+                appliedTrimWindow={activeTrimWindow}
+                pendingTrimWindow={pendingTrimWindow}
+                onPendingTrimWindowChange={handlePendingTrimWindowChange}
+                onApplyTrimWindow={handleApplyTrimWindow}
+                onResetTrimWindow={handleResetTrimWindow}
+                gridMode={gridOverlayMode}
+                onGridModeChange={handleGridModeChange}
+                snapToSubdivision={snapToSubdivision && Boolean(renderedPlayback?.beatGrid)}
+                onSnapToSubdivisionChange={handleSnapToSubdivisionChange}
+                isApplyingTrim={isRenderingPlayback}
               />
             ) : (
               <div className="status info">Render a loop to view the piano roll.</div>

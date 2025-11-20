@@ -32,34 +32,64 @@ A visualization library for creating fretboard diagrams:
 
 ## Installation
 
-### Prerequisites
+This project relies on a reproducible Nix + devenv toolchain. The steps below assume no prior experience with either tool.
 
-This project uses [devenv](https://devenv.sh/) for development environment management. You'll need:
-- [Nix](https://nixos.org/download.html)
-- [devenv](https://devenv.sh/getting-started/)
+### 1. Install Nix
 
-### Setup
+The easiest path is the experimental installer, which supports Linux, macOS, Windows (WSL2), and Docker containers:
+
+```bash
+curl -L https://github.com/NixOS/experimental-nix-installer/releases/download/0.27.0/nix-installer.sh | sh -s -- install
+```
+
+We recommend this installer because it survives OS upgrades and has first-class Apple silicon support.
+
+If you prefer the long-standing official installer:
+
+```bash
+sh <(curl -L https://nixos.org/nix/install)
+```
+
+#### Upgrade Bash on macOS
+
+macOS ships an outdated Bash that can trigger Nix evaluation errors. After Nix is installed, upgrade Bash with:
+
+```bash
+nix-env --install --attr bashInteractive -f https://github.com/NixOS/nixpkgs/tarball/nixpkgs-unstable
+```
+
+### 2. Install devenv
+
+devenv manages the project-specific development shell. The newcomer-friendly approach uses `nix-env`:
+
+```bash
+nix-env --install --attr devenv -f https://github.com/NixOS/nixpkgs/tarball/nixpkgs-unstable
+```
+
+If you already enabled Nix's experimental features (`nix-command` and `flakes`), you can instead run:
+
+```bash
+nix --extra-experimental-features "nix-command flakes" profile install nixpkgs#devenv
+```
+
+### 3. Bootstrap the project
 
 1. Clone the repository:
-```bash
-git clone https://github.com/o1lo01ol1o/fretboard-thoery.git
-cd fretboard-thoery
-```
-
+   ```bash
+   git clone https://github.com/o1lo01ol1o/fretboard-thoery.git
+   cd fretboard-thoery
+   ```
 2. Enter the development environment:
-```bash
-devenv shell
-```
-
-3. Build the project:
-```bash
-cabal build all
-```
-
-4. Run tests:
-```bash
-cabal test all
-```
+   ```bash
+   nix develop --impure
+   ```
+   The first run downloads the full toolchain; expect several minutes on a fresh machine. If you prefer, `devenv shell` provides the same environment.
+3. Start the full stack (backend API + React frontend):
+   ```bash
+   full-stack
+   ```
+   The script builds the Haskell services (`cabal run exe:harmonic-function-server`) and the React UI (`bun run dev`). Leave this shell running; the first build may take a while as dependencies compile.
+4. When the frontend prints a URL (typically `http://localhost:5173`), open it in your browser to explore the app. Press `Ctrl+C` in the terminal to stop both servers.
 
 ## Usage
 
